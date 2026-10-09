@@ -56,9 +56,13 @@ def to_excel(df):
     return output.getvalue()
 
 def rangla_jadval(row):
-    if row.get('holat') == 'Chiqib ketgan':
+    # Katta va kichik harflardagi ustun nomlarini qabul qila oladigan moslashuvchan funksiya
+    holat_val = row.get('Holat') or row.get('holat')
+    qoldiq_val = row.get('Qoldiq') if 'Qoldiq' in row else row.get('qoldiq', 0)
+    
+    if holat_val == 'Chiqib ketgan':
         return ['background-color: #f1f5f9; color: #94a3b8'] * len(row)
-    elif row.get('qoldiq', 0) > 0:
+    elif qoldiq_val > 0:
         return ['background-color: #fef2f2; color: #b91c1c'] * len(row)
     else:
         return ['background-color: #f0fdf4; color: #15803d'] * len(row)
@@ -115,7 +119,7 @@ def chiroyli_kartochka(icon, title, value, bg_color):
     """
 
 # ==========================================
-# 3. UI VA LOGIN OYNASI (ENTER NI QO'LLAB-QUVVATLASH)
+# 3. UI VA LOGIN OYNASI
 # ==========================================
 st.set_page_config(page_title="Yangi Sergeli Hostel CRM", layout="wide")
 
@@ -136,7 +140,6 @@ if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        # Login oynasini Form ichiga olamiz, shunda Enter bosilsa kiradi
         with st.form("login_form"):
             login_input = st.text_input("Login", placeholder="Foydalanuvchi nomini kiriting...")
             parol_input = st.text_input("Parol", type="password", placeholder="Maxfiy parolni kiriting...")
@@ -171,10 +174,11 @@ k = str(st.session_state.reset_key)
 
 t1, t2, t3, t4, t5, t6 = None, None, None, None, None, None
 
+# DASHBOARD ENDI ADMINLAR UCHUN HAM OCHIQ
 if st.session_state.role == "ceo":
     t1, t2, t3, t4, t5, t6 = st.tabs(["📈 Aqlli Dashboard", "📝 Qabul va Bron", "🔲 Metro-Shaxmatka", "💼 Front-Ofis", "👑 CEO Paneli", "⚙️ Sozlamalar"])
 else:
-    t2, t3, t4, t6 = st.tabs(["📝 Qabul va Bron", "🔲 Metro-Shaxmatka", "💼 Front-Ofis (Boshqaruv)", "⚙️ Sozlamalar"])
+    t1, t2, t3, t4, t6 = st.tabs(["📈 Aqlli Dashboard", "📝 Qabul va Bron", "🔲 Metro-Shaxmatka", "💼 Front-Ofis (Boshqaruv)", "⚙️ Sozlamalar"])
 
 # ----------------------------------------------------
 # TAB 1: AQLLI DASHBOARD
@@ -309,8 +313,9 @@ if t4:
     with t4:
         st.header("💼 Mijozlar va Boshqaruv (Front-Ofis)")
         df = pd.read_sql_query("SELECT * FROM bronlar ORDER BY id DESC", conn)
-        df['qoldiq'] = df['qoldiq'].fillna(0)
+        df['faktik_narx'] = df['faktik_narx'].fillna(0)
         df['tolagan_summa'] = df['tolagan_summa'].fillna(0)
+        df['qoldiq'] = df['qoldiq'].fillna(0)
         xodim_nomi = "CEO" if st.session_state.role == "ceo" else "Front-Ofis Admini"
         
         if not df.empty:
@@ -321,9 +326,16 @@ if t4:
                 excel_data = to_excel(faol_df)
                 st.download_button(label="📥 Faol Mijozlarni Excel qilib yuklash", data=excel_data, file_name=f"Faol_Mijozlar_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
-                faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'qoldiq', 'holat', 'chiqish_sanasi']]
-                styler_faol = faol_korsatish.style.apply(rangla_jadval, axis=1).format({'qoldiq': '{:,.0f} UZS'})
-                st.dataframe(styler_faol, use_container_width=True)
+                # Yangilangan: Jami, To'langan va Qoldiq qismlarini chiqardik va sarlavhalarni tozaladik
+                faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat']].copy()
+                faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish Sanasi', 'Holat']
+                
+                styler_faol = faol_korsatish.style.apply(rangla_jadval, axis=1).format({
+                    'Jami Summa': '{:,.0f} UZS',
+                    'To\'langan': '{:,.0f} UZS',
+                    'Qoldiq': '{:,.0f} UZS'
+                })
+                st.dataframe(styler_faol, use_container_width=True, hide_index=True)
             
             st.markdown("---")
             m1, m2 = st.columns(2)
@@ -338,8 +350,8 @@ if t4:
                         eski_chiqish = datetime.strptime(mijoz_data['chiqish_sanasi'], "%Y-%m-%d")
                         yangi_chiqish = eski_chiqish + timedelta(days=qoshimcha_kun)
                         qoshimcha_summa = mijoz_data['kunlik_narx'] * qoshimcha_kun
-                        c.execute("UPDATE bronlar SET kunlar=kunlar+?, qoldiq=qoldiq+?, jami_summa=jami_summa+?, chiqish_sanasi=?, holat='Qarzdorlik' WHERE mijoz_id=?", 
-                                  (qoshimcha_kun, qoshimcha_summa, qoshimcha_summa, yangi_chiqish.strftime("%Y-%m-%d"), m_id))
+                        c.execute("UPDATE bronlar SET kunlar=kunlar+?, qoldiq=qoldiq+?, jami_summa=jami_summa+?, faktik_narx=faktik_narx+?, chiqish_sanasi=?, holat='Qarzdorlik' WHERE mijoz_id=?", 
+                                  (qoshimcha_kun, qoshimcha_summa, qoshimcha_summa, qoshimcha_summa, yangi_chiqish.strftime("%Y-%m-%d"), m_id))
                         conn.commit()
                         jurnalga_yozish(m_id, xodim_nomi, "Muddat cho'zildi", f"+{qoshimcha_kun} kun. Qarziga {qoshimcha_summa:,.0f} qo'shildi.")
                         st.success("Muddat muvaffaqiyatli cho'zildi!")
@@ -372,9 +384,15 @@ if t4:
                 excel_data_arxiv = to_excel(arxiv_df)
                 st.download_button(label="📥 Arxivni Excel qilib yuklash", data=excel_data_arxiv, file_name=f"Arxiv_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
-                arxiv_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'kirish_sanasi', 'chiqish_sanasi', 'tolagan_summa', 'qoldiq', 'holat']]
-                styler_arxiv = arxiv_korsatish.style.apply(rangla_jadval, axis=1).format({'tolagan_summa': '{:,.0f} UZS', 'qoldiq': '{:,.0f} UZS'})
-                st.dataframe(styler_arxiv, use_container_width=True)
+                arxiv_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'chiqish_sanasi', 'holat']].copy()
+                arxiv_korsatish.columns = ['ID', 'Mijoz', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Kirish', 'Chiqish', 'Holat']
+                
+                styler_arxiv = arxiv_korsatish.style.apply(rangla_jadval, axis=1).format({
+                    'Jami Summa': '{:,.0f} UZS',
+                    'To\'langan': '{:,.0f} UZS', 
+                    'Qoldiq': '{:,.0f} UZS'
+                })
+                st.dataframe(styler_arxiv, use_container_width=True, hide_index=True)
 
 # ----------------------------------------------------
 # TAB 5: CEO PANEL
@@ -432,7 +450,7 @@ if t5:
                     st.rerun()
 
 # ----------------------------------------------------
-# TAB 6: SOZLAMALAR (Form orqali Enter ni qo'llab-quvvatlash)
+# TAB 6: SOZLAMALAR
 # ----------------------------------------------------
 if t6:
     with t6:
@@ -445,7 +463,6 @@ if t6:
         
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            # Form ishlatildi, shuning uchun Enter bosilganda ham ma'lumot saqlanadi
             with st.form("settings_form"):
                 yangi_login = st.text_input("Yangi login (nom):", value=joriy_login)
                 yangi_parol = st.text_input("Yangi parol:", type="password", placeholder="Yangi parolni kiriting...")
