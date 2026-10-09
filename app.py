@@ -234,7 +234,6 @@ if t2:
             tomon = st.selectbox("Tomon / Qanot", list(XONALAR.keys()), key=f"tomon_{k}")
             xona = st.selectbox("Xona raqami", list(XONALAR[tomon].keys()), key=f"xona_{k}")
             
-            # DINAMIK ODAM SONI QISMI
             xona_sigimi = XONALAR[tomon][xona][0]
             odam_soni_variantlari = list(range(1, xona_sigimi + 1))
             odam_soni = st.selectbox("Odam soni", odam_soni_variantlari, key=f"odam_{k}")
@@ -254,7 +253,8 @@ if t2:
         kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar)
         with col3:
             st.info(f"🧾 **Standart jami:** {standart_jami:,.0f} so'm")
-            st.success(f"📅 **Chiqish:** {chiqish_sanasi.strftime('%Y-%m-%d')}")
+            # 12:00 QO'SHILDI
+            st.success(f"📅 **Chiqish:** {chiqish_sanasi.strftime('%Y-%m-%d')} 12:00")
             if st.checkbox("⚙️ Admin maxsus narx", key=f"maxsus_{k}"):
                 yakuniy_narx = st.number_input("KUNLIK narxni kiriting:", value=int(kunlik_stavka), step=5000, key=f"ynarx_{k}") * kunlar
             else: yakuniy_narx = standart_jami
@@ -329,6 +329,8 @@ if t4:
                 st.download_button(label="📥 Faol Mijozlarni Excel qilib yuklash", data=excel_data, file_name=f"Faol_Mijozlar_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat']].copy()
+                # 12:00 QO'SHILDI
+                faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
                 faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish Sanasi', 'Holat']
                 
                 styler_faol = faol_korsatish.style.apply(rangla_jadval, axis=1).format({
@@ -386,6 +388,8 @@ if t4:
                 st.download_button(label="📥 Arxivni Excel qilib yuklash", data=excel_data_arxiv, file_name=f"Arxiv_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
                 arxiv_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'chiqish_sanasi', 'holat']].copy()
+                # 12:00 QO'SHILDI
+                arxiv_korsatish['chiqish_sanasi'] = arxiv_korsatish['chiqish_sanasi'] + ' 12:00'
                 arxiv_korsatish.columns = ['ID', 'Mijoz', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Kirish', 'Chiqish', 'Holat']
                 
                 styler_arxiv = arxiv_korsatish.style.apply(rangla_jadval, axis=1).format({
