@@ -56,7 +56,6 @@ def to_excel(df):
     return output.getvalue()
 
 def rangla_jadval(row):
-    # Katta va kichik harflardagi ustun nomlarini qabul qila oladigan moslashuvchan funksiya
     holat_val = row.get('Holat') or row.get('holat')
     qoldiq_val = row.get('Qoldiq') if 'Qoldiq' in row else row.get('qoldiq', 0)
     
@@ -174,7 +173,6 @@ k = str(st.session_state.reset_key)
 
 t1, t2, t3, t4, t5, t6 = None, None, None, None, None, None
 
-# DASHBOARD ENDI ADMINLAR UCHUN HAM OCHIQ
 if st.session_state.role == "ceo":
     t1, t2, t3, t4, t5, t6 = st.tabs(["📈 Aqlli Dashboard", "📝 Qabul va Bron", "🔲 Metro-Shaxmatka", "💼 Front-Ofis", "👑 CEO Paneli", "⚙️ Sozlamalar"])
 else:
@@ -235,7 +233,11 @@ if t2:
         with col2:
             tomon = st.selectbox("Tomon / Qanot", list(XONALAR.keys()), key=f"tomon_{k}")
             xona = st.selectbox("Xona raqami", list(XONALAR[tomon].keys()), key=f"xona_{k}")
-            odam_soni = st.selectbox("Odam soni", [1, 2, 3, 4], key=f"odam_{k}")
+            
+            # DINAMIK ODAM SONI QISMI
+            xona_sigimi = XONALAR[tomon][xona][0]
+            odam_soni_variantlari = list(range(1, xona_sigimi + 1))
+            odam_soni = st.selectbox("Odam soni", odam_soni_variantlari, key=f"odam_{k}")
             
             kunlar = st.number_input("Necha kun?", min_value=1, value=1, key=f"kun_{k}") if muddat == "Kunlik" else MUDDATLAR[muddat]
             chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
@@ -326,7 +328,6 @@ if t4:
                 excel_data = to_excel(faol_df)
                 st.download_button(label="📥 Faol Mijozlarni Excel qilib yuklash", data=excel_data, file_name=f"Faol_Mijozlar_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
-                # Yangilangan: Jami, To'langan va Qoldiq qismlarini chiqardik va sarlavhalarni tozaladik
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat']].copy()
                 faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish Sanasi', 'Holat']
                 
