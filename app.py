@@ -293,12 +293,10 @@ if t3:
         
         sana_royxati = [bosh_sana + timedelta(days=i) for i in range(15)]
         matrix = []
-        mavjud_xonalar_royxati = []
         
         for tomon, xonalar in XONALAR.items():
             if tanlangan_katalog != "Barchasi" and tomon != tanlangan_katalog: continue
             for xona, info in xonalar.items():
-                mavjud_xonalar_royxati.append(xona)
                 sigim = info[0]
                 qator = {"Xona": f"{xona} ({sigim} k)" if tanlangan_katalog != "Barchasi" else f"{tomon[0]} | {xona} ({sigim} k)"}
                 for d in sana_royxati:
@@ -307,32 +305,48 @@ if t3:
                     bosh = sigim - (c.fetchone()[0] or 0)
                     qator[d.strftime("%d.%m")] = "🟩 Bo'sh" if bosh == sigim else "🟥 Band" if bosh <= 0 else f"🟨 {bosh} ta"
                 matrix.append(qator)
-                
-        st.dataframe(pd.DataFrame(matrix), use_container_width=True, hide_index=True)
         
-        # --- YANGI QO'SHILGAN: XONA ICHINI TEZOR TEKSHIRISH ---
+        df_matrix = pd.DataFrame(matrix)
+        
+        st.markdown("👇 **Jadval ichidagi istalgan xonaning ustiga bosing (Kim yotganini ko'rish uchun):**")
+        
+        # JADVALNI O'ZINI BOSISH FUNKSIYASI (on_select)
+        grid_response = st.dataframe(
+            df_matrix, 
+            use_container_width=True, 
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single_row"
+        )
+        
         st.markdown("---")
-        st.subheader("🔍 Tezkor xona nazorati (Kim yotibdi?)")
-        st.caption("Yuqoridagi shaxmatkada joy borligini ko'rsangiz, shu yerdan xonani tanlab, ichidagi mijozlarning jinsi va ma'lumotlarini aniqlashtirib oling.")
+        st.subheader("🔍 Xona ichidagi holat")
         
-        col_xona_tanlov, col_xona_info = st.columns([1, 2])
-        with col_xona_tanlov:
-            tekshirilayotgan_xona = st.selectbox("Xonani tanlang:", mavjud_xonalar_royxati)
+        selected_rows = grid_response.selection.rows
+        if selected_rows:
+            # Tanlangan qatordagi xona nomini ajratib olamiz
+            tanlangan_qator_matni = df_matrix.iloc[selected_rows[0]]["Xona"]
             
-        with col_xona_info:
-            c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'", (tekshirilayotgan_xona,))
+            xona_nomi = tanlangan_qator_matni
+            if " | " in xona_nomi:
+                xona_nomi = xona_nomi.split(" | ")[1]
+            xona_nomi = xona_nomi.split(" (")[0].strip()
+            
+            c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'", (xona_nomi,))
             ichidagilar = c.fetchall()
             
             if not ichidagilar:
-                st.success(f"✅ **{tekshirilayotgan_xona} hozirda to'liq bo'sh.** Istalgan jinsdagi mijozni joylashtirishingiz mumkin!")
+                st.success(f"✅ **{xona_nomi}** hozirda to'liq bo'sh. Istalgan jinsdagi mijozni bemalol joylashtirishingiz mumkin!")
             else:
-                st.info(f"👥 **{tekshirilayotgan_xona}da hozir {len(ichidagilar)} nafar mijoz bor:**")
+                st.info(f"👥 **{xona_nomi}** ichida hozir {len(ichidagilar)} nafar mijoz bor:")
                 for m in ichidagilar:
                     ism, jinsi, chiqish, tolagan, qoldiq = m
                     jins_ikonka = "🧔‍♂️ Erkak" if jinsi == "Erkak" else "👩 Ayol"
                     qarz_ogohlantirish = f" | ⚠️ **Qoldiq: {qoldiq:,.0f} UZS**" if qoldiq > 0 else ""
                     
                     st.markdown(f"- **{ism}** ({jins_ikonka}) • 🛫 Chiqish: {chiqish} 12:00 • 💰 To'ladi: {tolagan:,.0f} UZS {qarz_ogohlantirish}")
+        else:
+            st.warning("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan (shaxmatkadan) biror qatorni tanlang.")
 
 # ----------------------------------------------------
 # TAB 4: FRONT-OFIS BOSHQARUV
