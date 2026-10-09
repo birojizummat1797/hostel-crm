@@ -253,7 +253,6 @@ if t2:
         kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar)
         with col3:
             st.info(f"🧾 **Standart jami:** {standart_jami:,.0f} so'm")
-            # 12:00 QO'SHILDI
             st.success(f"📅 **Chiqish:** {chiqish_sanasi.strftime('%Y-%m-%d')} 12:00")
             if st.checkbox("⚙️ Admin maxsus narx", key=f"maxsus_{k}"):
                 yakuniy_narx = st.number_input("KUNLIK narxni kiriting:", value=int(kunlik_stavka), step=5000, key=f"ynarx_{k}") * kunlar
@@ -283,7 +282,7 @@ if t2:
                 st.error("Mijoz ismini kiriting!")
 
 # ----------------------------------------------------
-# TAB 3: METRO SHAXMATKA 
+# TAB 3: METRO SHAXMATKA VA XONA TEKSHIRUVI
 # ----------------------------------------------------
 if t3:
     with t3:
@@ -294,10 +293,12 @@ if t3:
         
         sana_royxati = [bosh_sana + timedelta(days=i) for i in range(15)]
         matrix = []
+        mavjud_xonalar_royxati = []
         
         for tomon, xonalar in XONALAR.items():
             if tanlangan_katalog != "Barchasi" and tomon != tanlangan_katalog: continue
             for xona, info in xonalar.items():
+                mavjud_xonalar_royxati.append(xona)
                 sigim = info[0]
                 qator = {"Xona": f"{xona} ({sigim} k)" if tanlangan_katalog != "Barchasi" else f"{tomon[0]} | {xona} ({sigim} k)"}
                 for d in sana_royxati:
@@ -306,7 +307,32 @@ if t3:
                     bosh = sigim - (c.fetchone()[0] or 0)
                     qator[d.strftime("%d.%m")] = "🟩 Bo'sh" if bosh == sigim else "🟥 Band" if bosh <= 0 else f"🟨 {bosh} ta"
                 matrix.append(qator)
+                
         st.dataframe(pd.DataFrame(matrix), use_container_width=True, hide_index=True)
+        
+        # --- YANGI QO'SHILGAN: XONA ICHINI TEZOR TEKSHIRISH ---
+        st.markdown("---")
+        st.subheader("🔍 Tezkor xona nazorati (Kim yotibdi?)")
+        st.caption("Yuqoridagi shaxmatkada joy borligini ko'rsangiz, shu yerdan xonani tanlab, ichidagi mijozlarning jinsi va ma'lumotlarini aniqlashtirib oling.")
+        
+        col_xona_tanlov, col_xona_info = st.columns([1, 2])
+        with col_xona_tanlov:
+            tekshirilayotgan_xona = st.selectbox("Xonani tanlang:", mavjud_xonalar_royxati)
+            
+        with col_xona_info:
+            c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'", (tekshirilayotgan_xona,))
+            ichidagilar = c.fetchall()
+            
+            if not ichidagilar:
+                st.success(f"✅ **{tekshirilayotgan_xona} hozirda to'liq bo'sh.** Istalgan jinsdagi mijozni joylashtirishingiz mumkin!")
+            else:
+                st.info(f"👥 **{tekshirilayotgan_xona}da hozir {len(ichidagilar)} nafar mijoz bor:**")
+                for m in ichidagilar:
+                    ism, jinsi, chiqish, tolagan, qoldiq = m
+                    jins_ikonka = "🧔‍♂️ Erkak" if jinsi == "Erkak" else "👩 Ayol"
+                    qarz_ogohlantirish = f" | ⚠️ **Qoldiq: {qoldiq:,.0f} UZS**" if qoldiq > 0 else ""
+                    
+                    st.markdown(f"- **{ism}** ({jins_ikonka}) • 🛫 Chiqish: {chiqish} 12:00 • 💰 To'ladi: {tolagan:,.0f} UZS {qarz_ogohlantirish}")
 
 # ----------------------------------------------------
 # TAB 4: FRONT-OFIS BOSHQARUV
@@ -329,7 +355,6 @@ if t4:
                 st.download_button(label="📥 Faol Mijozlarni Excel qilib yuklash", data=excel_data, file_name=f"Faol_Mijozlar_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat']].copy()
-                # 12:00 QO'SHILDI
                 faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
                 faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish Sanasi', 'Holat']
                 
@@ -388,7 +413,6 @@ if t4:
                 st.download_button(label="📥 Arxivni Excel qilib yuklash", data=excel_data_arxiv, file_name=f"Arxiv_{bugungi_sana}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
                 arxiv_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'chiqish_sanasi', 'holat']].copy()
-                # 12:00 QO'SHILDI
                 arxiv_korsatish['chiqish_sanasi'] = arxiv_korsatish['chiqish_sanasi'] + ' 12:00'
                 arxiv_korsatish.columns = ['ID', 'Mijoz', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Kirish', 'Chiqish', 'Holat']
                 
