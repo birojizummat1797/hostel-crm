@@ -62,9 +62,14 @@ def to_excel(df):
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False, sheet_name='Hisobot')
     return output.getvalue()
 
+# Xatoni keltirib chiqargan funksiyani aqlli qildik (Matn kelsa uni tozalab tekshiradi)
 def rangla_jadval(row):
-    holat_val = row.get('Holat') or row.get('holat')
-    qoldiq_val = row.get('Qoldiq') if 'Qoldiq' in row else row.get('qoldiq', 0)
+    holat_val = str(row.get('Holat', row.get('holat', '')))
+    q_str = str(row.get('Qoldiq', row.get('qoldiq', '0'))).replace(' UZS', '').replace(',', '').strip()
+    
+    try: qoldiq_val = float(q_str)
+    except: qoldiq_val = 0
+        
     if holat_val == 'Chiqib ketgan': return ['background-color: #f1f5f9; color: #94a3b8'] * len(row)
     elif qoldiq_val > 0: return ['background-color: #fef2f2; color: #b91c1c'] * len(row)
     else: return ['background-color: #f0fdf4; color: #15803d'] * len(row)
@@ -196,7 +201,6 @@ if t2:
     with t2:
         bron_turi = st.radio("📌 Ro'yxatdan o'tish turi:", ["Hozir qabul qilish (Kirish)", "Oldindan band qilish (Bron)"], horizontal=True, key=f"bturi_{k}")
         st.markdown("---")
-        
         col1, col2, col3 = st.columns(3)
         with col1:
             mijoz_ism = st.text_input("Mijoz F.I.O / Telefon", key=f"ism_{k}")
@@ -328,7 +332,7 @@ if t3:
         else: st.info("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan biror qatorni ustiga bosing.")
 
 # ----------------------------------------------------
-# TAB 4: FRONT-OFIS (Raqamlar formatlangan holatda)
+# TAB 4: FRONT-OFIS (Xatosiz, raqamlar aniq formatlangan)
 # ----------------------------------------------------
 if t4:
     with t4:
@@ -347,8 +351,6 @@ if t4:
                 st.subheader("📅 Oldindan Bron qilinganlar")
                 bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'izoh']].copy()
                 bron_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Kelish Sanasi', 'Izoh']
-                
-                # RAQAMLARNI FORMATLASH (XATONI OLDINI OLISH UCHUN)
                 for col in ['Jami Summa', 'To\'langan', 'Qoldiq']:
                     bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(bron_korsatish, use_container_width=True, hide_index=True)
@@ -358,11 +360,8 @@ if t4:
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat', 'izoh']].copy()
                 faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
                 faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish', 'Holat', 'Izoh']
-                
-                # RAQAMLARNI FORMATLASH
                 for col in ['Jami Summa', 'To\'langan', 'Qoldiq']:
                     faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
-                    
                 st.dataframe(faol_korsatish.style.apply(rangla_jadval, axis=1), use_container_width=True, hide_index=True)
             
             st.markdown("---")
