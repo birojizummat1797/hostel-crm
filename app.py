@@ -316,7 +316,7 @@ if t3:
             use_container_width=True, 
             hide_index=True,
             on_select="rerun",
-            selection_mode="single_row"
+            selection_mode="single-row" # <-- Xuddi shu yerda pastki chiziq o'rniga defis (-) yoziladi
         )
         
         st.markdown("---")
