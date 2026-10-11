@@ -89,6 +89,12 @@ XONALAR = {
 }
 MUDDATLAR = {"Kunlik": 1, "1 hafta (7 kun)": 7, "10 kun": 10, "15 kun": 15, "1 oylik (30 kun)": 30}
 
+def xona_sigimini_ol(xona_nomi):
+    for tomon in XONALAR.values():
+        if xona_nomi in tomon:
+            return tomon[xona_nomi][0]
+    return 0
+
 def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar):
     sigim, bazaviy_narx = XONALAR[tomon][xona]
     if tomon == "O'rtadagi": kunlik = 300000 if toifa == "Chet el fuqarosi" else 250000
@@ -310,13 +316,12 @@ if t3:
         
         st.markdown("👇 **Jadval ichidagi istalgan xonaning ustiga bosing (Kim yotganini ko'rish uchun):**")
         
-        # JADVALNI O'ZINI BOSISH FUNKSIYASI (on_select)
         grid_response = st.dataframe(
             df_matrix, 
             use_container_width=True, 
             hide_index=True,
             on_select="rerun",
-            selection_mode="single-row" # <-- Xuddi shu yerda pastki chiziq o'rniga defis (-) yoziladi
+            selection_mode="single-row"
         )
         
         st.markdown("---")
@@ -324,7 +329,6 @@ if t3:
         
         selected_rows = grid_response.selection.rows
         if selected_rows:
-            # Tanlangan qatordagi xona nomini ajratib olamiz
             tanlangan_qator_matni = df_matrix.iloc[selected_rows[0]]["Xona"]
             
             xona_nomi = tanlangan_qator_matni
@@ -332,21 +336,31 @@ if t3:
                 xona_nomi = xona_nomi.split(" | ")[1]
             xona_nomi = xona_nomi.split(" (")[0].strip()
             
-            c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'", (xona_nomi,))
+            umumiy_sigim = xona_sigimini_ol(xona_nomi)
+            
+            c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'", (xona_nomi,))
             ichidagilar = c.fetchall()
             
             if not ichidagilar:
-                st.success(f"✅ **{xona_nomi}** hozirda to'liq bo'sh. Istalgan jinsdagi mijozni bemalol joylashtirishingiz mumkin!")
+                st.success(f"🟢 **XONA TO'LIQ BO'SH — Mijozlarni qabul qilish mumkin!**\n\nTanlangan xona: {xona_nomi} ({umumiy_sigim} kishilik)")
             else:
-                st.info(f"👥 **{xona_nomi}** ichida hozir {len(ichidagilar)} nafar mijoz bor:")
+                band_qilingan_joylar = sum([m[5] for m in ichidagilar])
+                qoldiq_joy = umumiy_sigim - band_qilingan_joylar
+                
+                if qoldiq_joy > 0:
+                    st.warning(f"🟡 **XONADA MIJOZLAR BOR — Qoldiq o'rinlar: {qoldiq_joy} ta bo'sh**\n\nTanlangan xona: {xona_nomi} ({umumiy_sigim} kishilik, shundan {band_qilingan_joylar} tasi band)")
+                else:
+                    st.error(f"🔴 **XONA TO'LIQ BAND — Bo'sh joy yo'q!**\n\nTanlangan xona: {xona_nomi} ({umumiy_sigim} kishilik)")
+
+                st.markdown("**Hozirda xonada yotgan mijozlar:**")
                 for m in ichidagilar:
-                    ism, jinsi, chiqish, tolagan, qoldiq = m
+                    ism, jinsi, chiqish, tolagan, qoldiq, odam_soni = m
                     jins_ikonka = "🧔‍♂️ Erkak" if jinsi == "Erkak" else "👩 Ayol"
                     qarz_ogohlantirish = f" | ⚠️ **Qoldiq: {qoldiq:,.0f} UZS**" if qoldiq > 0 else ""
                     
-                    st.markdown(f"- **{ism}** ({jins_ikonka}) • 🛫 Chiqish: {chiqish} 12:00 • 💰 To'ladi: {tolagan:,.0f} UZS {qarz_ogohlantirish}")
+                    st.markdown(f"- **{ism}** ({jins_ikonka} - {odam_soni} kishi) • 🛫 Chiqish: {chiqish} 12:00 • 💰 To'ladi: {tolagan:,.0f} UZS {qarz_ogohlantirish}")
         else:
-            st.warning("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan (shaxmatkadan) biror qatorni tanlang.")
+            st.info("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan (shaxmatkadan) biror qatorni tanlang.")
 
 # ----------------------------------------------------
 # TAB 4: FRONT-OFIS BOSHQARUV
