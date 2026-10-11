@@ -190,7 +190,7 @@ if t1:
         else: st.info("Hozircha bazada ma'lumot yo'q.")
 
 # ----------------------------------------------------
-# TAB 2: QABUL VA BRON 
+# TAB 2: QABUL VA BRON
 # ----------------------------------------------------
 if t2:
     with t2:
@@ -213,31 +213,23 @@ if t2:
             odam_soni = st.selectbox("Odam soni", list(range(1, xona_sigimi + 1)), key=f"odam_{k}")
             kunlar = st.number_input("Necha kun?", min_value=1, value=1, key=f"kun_{k}") if muddat == "Kunlik" else MUDDATLAR[muddat]
             chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
-            
             kirish_str = kirish_sanasi.strftime("%Y-%m-%d")
             chiqish_str = chiqish_sanasi.strftime("%Y-%m-%d")
             
             c.execute("SELECT mijoz, kirish_sanasi, chiqish_sanasi, odam_soni FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?", (xona, chiqish_str, kirish_str))
             oraliqdagi_bronlar = c.fetchall()
-            
             c.execute("SELECT SUM(odam_soni) FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?", (xona, chiqish_str, kirish_str))
             band = c.fetchone()[0] or 0
             bosh_joy = XONALAR[tomon][xona][0] - band
             
             joy_bor = True
-            if bosh_joy <= 0: 
-                st.error(f"⚠️ {xona} tanlangan sanalarda to'liq band!")
-                joy_bor = False
-            elif odam_soni > bosh_joy: 
-                st.error(f"⚠️ Bu xonada o'sha sanalarga faqat {bosh_joy} ta joy qolgan xolos!")
-                joy_bor = False
-            else: 
-                st.success(f"✅ Sanalarga mos {bosh_joy} ta bo'sh joy bor.")
+            if bosh_joy <= 0: st.error(f"⚠️ {xona} tanlangan sanalarda to'liq band!"); joy_bor = False
+            elif odam_soni > bosh_joy: st.error(f"⚠️ Bu xonada o'sha sanalarga faqat {bosh_joy} ta joy qolgan xolos!"); joy_bor = False
+            else: st.success(f"✅ Sanalarga mos {bosh_joy} ta bo'sh joy bor.")
                 
             if oraliqdagi_bronlar:
                 st.info("📌 **Tanlangan davrda xonadagi boshqa bandliklar:**")
-                for b in oraliqdagi_bronlar:
-                    st.markdown(f"🗓 {b[1]} dan {b[2]} 12:00 gacha: **{b[0]}** ({b[3]} kishi)")
+                for b in oraliqdagi_bronlar: st.markdown(f"🗓 {b[1]} dan {b[2]} 12:00 gacha: **{b[0]}** ({b[3]} kishi)")
 
         kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar)
         with col3:
@@ -274,7 +266,6 @@ if t3:
         col_kat, col_san = st.columns([2, 1])
         tanlangan_katalog = col_kat.radio("Qanot:", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True)
         bosh_sana = col_san.date_input("Boshlanish sanasi:", datetime.today())
-        
         sana_royxati = [bosh_sana + timedelta(days=i) for i in range(15)]
         matrix = []
         for tomon, xonalar in XONALAR.items():
@@ -303,12 +294,10 @@ if t3:
             
             c.execute("SELECT mijoz, jinsi, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<=? AND chiqish_sanasi>?", (xona_nomi, bugun, bugun))
             bugun_ichidagilar = c.fetchall()
-            
             c.execute("SELECT mijoz, jinsi, kirish_sanasi, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi>?", (xona_nomi, bugun))
             kelajakdagi_bronlar = c.fetchall()
             
-            if not bugun_ichidagilar and not kelajakdagi_bronlar:
-                st.success(f"🟢 **XONA TO'LIQ BO'SH — {xona_nomi} ({umumiy_sigim} kishilik)**")
+            if not bugun_ichidagilar and not kelajakdagi_bronlar: st.success(f"🟢 **XONA TO'LIQ BO'SH — {xona_nomi} ({umumiy_sigim} kishilik)**")
             elif not bugun_ichidagilar and kelajakdagi_bronlar:
                 eng_yaqin = sorted(kelajakdagi_bronlar, key=lambda x: x[2])[0]
                 st.warning(f"🟡 **XONA HOZIR BO'SH, lekin {eng_yaqin[2]} dan boshlab band qilingan! — {xona_nomi} ({umumiy_sigim} kishilik)**")
@@ -319,8 +308,7 @@ if t3:
                     msg = f"🟡 **XONADA HOZIR MIJOZLAR BOR — Qoldiq o'rin: {qoldiq_joy} ta. {xona_nomi}**"
                     if kelajakdagi_bronlar: msg += "\n\n*(Diqqat: Kelajakda bronlar ham bor!)*"
                     st.warning(msg)
-                else: 
-                    st.error(f"🔴 **XONA HOZIR TO'LIQ BAND — {xona_nomi}**")
+                else: st.error(f"🔴 **XONA HOZIR TO'LIQ BAND — {xona_nomi}**")
             
             if bugun_ichidagilar:
                 st.markdown("**Hozirgi mijozlar:**")
@@ -340,7 +328,7 @@ if t3:
         else: st.info("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan biror qatorni ustiga bosing.")
 
 # ----------------------------------------------------
-# TAB 4: FRONT-OFIS 
+# TAB 4: FRONT-OFIS (Raqamlar formatlangan holatda)
 # ----------------------------------------------------
 if t4:
     with t4:
@@ -359,6 +347,10 @@ if t4:
                 st.subheader("📅 Oldindan Bron qilinganlar")
                 bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'izoh']].copy()
                 bron_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Kelish Sanasi', 'Izoh']
+                
+                # RAQAMLARNI FORMATLASH (XATONI OLDINI OLISH UCHUN)
+                for col in ['Jami Summa', 'To\'langan', 'Qoldiq']:
+                    bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(bron_korsatish, use_container_width=True, hide_index=True)
 
             st.subheader("🟢 Hozirgi (Faol) Mijozlar")
@@ -366,6 +358,11 @@ if t4:
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat', 'izoh']].copy()
                 faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
                 faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', 'To\'langan', 'Qoldiq', 'Chiqish', 'Holat', 'Izoh']
+                
+                # RAQAMLARNI FORMATLASH
+                for col in ['Jami Summa', 'To\'langan', 'Qoldiq']:
+                    faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
+                    
                 st.dataframe(faol_korsatish.style.apply(rangla_jadval, axis=1), use_container_width=True, hide_index=True)
             
             st.markdown("---")
@@ -461,7 +458,8 @@ if t_market:
             if not df_savdo.empty:
                 df_savdo_korsatish = df_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_turi', 'xodim']].copy()
                 df_savdo_korsatish.columns = ['Sana', 'Mahsulot', 'Xaridor', 'Miqdor', 'Jami Summa', 'To\'lov Turi', 'Sotuvchi (Admin)']
-                st.dataframe(df_savdo_korsatish.style.format({'Jami Summa': '{:,.0f} UZS'}), use_container_width=True, hide_index=True)
+                df_savdo_korsatish['Jami Summa'] = df_savdo_korsatish['Jami Summa'].apply(lambda x: f"{int(x):,} UZS")
+                st.dataframe(df_savdo_korsatish, use_container_width=True, hide_index=True)
             else:
                 st.info("Hozircha marketda savdo amalga oshirilmagan.")
 
@@ -512,11 +510,12 @@ if t_ombor:
             df_mahsulot['izoh'] = df_mahsulot['izoh'].fillna('')
             if not df_mahsulot.empty: 
                 df_mahsulot.columns = ['Nomi', 'Hajmi', 'Kategoriya', 'Sub-kat', 'Narxi', 'Qoldiq', 'Izoh']
-                st.dataframe(df_mahsulot.style.format({'Narxi': '{:,.0f} UZS'}), use_container_width=True, hide_index=True)
+                df_mahsulot['Narxi'] = df_mahsulot['Narxi'].apply(lambda x: f"{int(x):,} UZS")
+                st.dataframe(df_mahsulot, use_container_width=True, hide_index=True)
             else: st.info("Sklad bo'sh.")
 
 # ----------------------------------------------------
-# TAB 5: CEO PANEL (Check-out da 12:00 vaqti aniq yoziladi)
+# TAB 5: CEO PANEL 
 # ----------------------------------------------------
 if t5:
     with t5:
@@ -532,7 +531,6 @@ if t5:
                 korsatkich = faollar['mijoz_id'] + " - " + faollar['xona'] + " (Chiqish: " + faollar['chiqish_sanasi'] + " 12:00)"
                 chiq_id_toliq = st.selectbox("Xonani bo'shatadigan mijoz:", korsatkich)
                 c_id = chiq_id_toliq.split(" - ")[0]
-                
                 if faollar[faollar['mijoz_id'] == c_id]['qoldiq'].values[0] > 0: st.error("⚠️ Qarz yopilmaguncha chiqarolmaysiz.")
                 elif st.button("Mijozni Arxivlash"):
                     c.execute("UPDATE bronlar SET holat = 'Chiqib ketgan', chiqish_sanasi = ? WHERE mijoz_id = ?", (bugungi_sana, c_id))
