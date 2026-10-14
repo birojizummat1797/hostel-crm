@@ -158,7 +158,7 @@ if db.fetchone("SELECT COUNT(*) FROM users")[0] == 0:
     db.execute("INSERT INTO users (role, login, parol) VALUES ('admin', 'admin', '123')")
     db.execute("INSERT INTO users (role, login, parol) VALUES ('ceo', 'ceo', '777')")
 
-# Eski to'lovlarni yangi "tolovlar_tarixi" jadvaliga avtomatik sinxronlash (1 marta ishlaydi)
+# Eski to'lovlarni yangi "tolovlar_tarixi" jadvaliga avtomatik sinxronlash
 if db.fetchone("SELECT COUNT(*) FROM tolovlar_tarixi")[0] == 0:
     eski_bronlar = db.fetchall("SELECT sana, mijoz_id, mijoz, tolagan_summa, tolov_turi, tolov_tafsiloti FROM bronlar WHERE tolagan_summa > 0")
     for b in eski_bronlar:
@@ -346,7 +346,7 @@ if t1:
                 t_cols = st.columns(4)
                 for index, row in tushum_turlari.reset_index(drop=True).iterrows():
                     with t_cols[index % 4]:
-                        st.info(f"**{row['tolov_tafsiloti']}** — **{row['summa']:,.0f} UZS**")
+                        st.info(f"**{row['tolov_tafsiloti']}**\n\n### {row['summa']:,.0f} UZS")
             else:
                 st.info("Hali kassa tushumlari mavjud emas.")
 
@@ -526,16 +526,16 @@ if t4:
             if not bron_df.empty:
                 st.subheader("📅 Oldindan Bron qilinganlar")
                 bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'izoh']].copy()
-                bron_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', "To'langan", 'Qoldiq', 'Kelish Sanasi', 'Izoh']
-                for col in ['Jami Summa', "To'langan", 'Qoldiq']: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
+                bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kelish Sanasi", "Izoh"]
+                for col in ["Jami Summa", "To'langan", "Qoldiq"]: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(bron_korsatish, use_container_width=True, hide_index=True)
 
             st.subheader("🟢 Hozirgi (Faol) Mijozlar")
             if not faol_df.empty:
                 faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat', 'izoh']].copy()
                 faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
-                faol_korsatish.columns = ['ID', 'Mijoz', 'Xona', 'Kun', 'Jami Summa', "To'langan", 'Qoldiq', 'Chiqish', 'Holat', 'Izoh']
-                for col in ['Jami Summa', "To'langan", 'Qoldiq']: faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
+                faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Chiqish", "Holat", "Izoh"]
+                for col in ["Jami Summa", "To'langan", "Qoldiq"]: faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(faol_korsatish.style.apply(rangla_jadval, axis=1), use_container_width=True, hide_index=True)
             
             st.markdown("---")
@@ -649,7 +649,7 @@ if t_market:
             df_savdo = db.read_df("SELECT * FROM savdolar ORDER BY id DESC")
             if not df_savdo.empty:
                 df_savdo_korsatish = df_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
-                df_savdo_korsatish.columns = ['Sana', 'Mahsulot', 'Xaridor', 'Miqdor', 'Jami Summa', "To'lov Turi", 'Sotuvchi (Admin)']
+                df_savdo_korsatish.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Sotuvchi (Admin)"]
                 df_savdo_korsatish['Jami Summa'] = df_savdo_korsatish['Jami Summa'].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(df_savdo_korsatish, use_container_width=True, hide_index=True)
             else:
@@ -700,7 +700,7 @@ if t_ombor:
             df_mahsulot = db.read_df("SELECT nomi, hajmi, kategoriya, sub_kategoriya, narxi, qoldiq, izoh FROM mahsulotlar ORDER BY qoldiq ASC")
             if not df_mahsulot.empty: 
                 df_mahsulot['izoh'] = df_mahsulot['izoh'].fillna('')
-                df_mahsulot.columns = ['Nomi', 'Hajmi', 'Kategoriya', 'Sub-kat', 'Narxi', 'Qoldiq', 'Izoh']
+                df_mahsulot.columns = ["Nomi", "Hajmi", "Kategoriya", "Sub-kat", "Narxi", "Qoldiq", "Izoh"]
                 df_mahsulot['Narxi'] = df_mahsulot['Narxi'].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(df_mahsulot, use_container_width=True, hide_index=True)
             else:
@@ -738,7 +738,7 @@ if t5:
             df_audit = db.read_df("SELECT * FROM audit_log ORDER BY id DESC")
             if not df_audit.empty: 
                 df_a_korsatish = df_audit[['vaqt', 'mijoz_id', 'xodim', 'harakat', 'tafsilot']].copy()
-                df_a_korsatish.columns = ['Sana va Vaqt', 'Obyekt / ID', 'Boshqaruvchi Xodim', 'Harakat Turi', "Batafsil ma'lumot"]
+                df_a_korsatish.columns = ["Sana va Vaqt", "Obyekt / ID", "Boshqaruvchi Xodim", "Harakat Turi", "Batafsil ma'lumot"]
                 st.dataframe(df_a_korsatish, use_container_width=True, hide_index=True)
             else:
                 st.info("Hozircha tizimda o'zgarishlar qayd etilmagan.")
