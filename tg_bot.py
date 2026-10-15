@@ -38,11 +38,11 @@ def tg_xabar_yubor(sarlavha, tafsilotlar, xodim, muhim=False):
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
-        requests.post(
+        res = requests.post(
             url, 
-            json={"chat_id": chat_id, "text": matn, "parse_mode": "HTML"}, 
-            timeout=3
+            json={"chat_id": str(chat_id).strip(), "text": matn, "parse_mode": "HTML"}, 
+            timeout=10
         )
-        return True
+        return res.status_code == 200
     except Exception:
         return False
