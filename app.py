@@ -21,6 +21,18 @@ if 'xodim_ismi' not in st.session_state: st.session_state.xodim_ismi = ""
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
 # ==========================================
+# AVTO-LOGIN (REFRESH QILINGANDA CHIQIB KETMASLIK UCHUN)
+# ==========================================
+if not st.session_state.logged_in and "user" in st.query_params:
+    saved_login = st.query_params["user"]
+    user = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=?", (saved_login,))
+    if user:
+        st.session_state.logged_in = True
+        st.session_state.role = user[0]
+        st.session_state.xodim_ismi = user[1] if user[1] else user[2].upper()
+        st.session_state.user_login = user[2]
+
+# ==========================================
 # 1. LOGIN OYNASI
 # ==========================================
 if not st.session_state.logged_in:
@@ -38,6 +50,7 @@ if not st.session_state.logged_in:
                     st.session_state.role = user[0]
                     st.session_state.xodim_ismi = user[1] if user[1] else user[2].upper()
                     st.session_state.user_login = user[2]
+                    st.query_params["user"] = user[2]  # Brauzer manzilida sessiyani saqlash
                     jurnalga_yozish("Tizim", st.session_state.xodim_ismi, "Tizimga kirdi", "Ish faoliyati boshlandi")
                     st.rerun()
                 else:
@@ -72,6 +85,7 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     jurnalga_yozish("Tizim", xodim_ismi, "Tizimdan chiqdi", "Ish faoliyati yakunlandi")
     st.session_state.logged_in = False
     st.session_state.role = None
+    st.query_params.clear()  # Chiqish bosilganda saqlangan sessiyani tozalash
     st.rerun()
 
 st.title("🏨 Yangi Sergeli Hostel CRM")
