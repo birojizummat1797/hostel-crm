@@ -36,6 +36,11 @@ class DBWrapper:
         if self.is_pg:
             self.conn = psycopg2.connect(self.db_url)
             self.conn.autocommit = True
+            try:
+                with self.conn.cursor() as cur:
+                    cur.execute("SET search_path TO public")
+            except Exception:
+                pass
         else:
             self.conn = sqlite3.connect('hostel_crm.db', check_same_thread=False)
 
@@ -64,7 +69,10 @@ class DBWrapper:
             return cur
         except Exception as e:
             if self.is_pg:
-                self.conn.rollback()
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    self.connect()
             raise e
 
     def fetchone(self, sql, params=()):
@@ -93,6 +101,7 @@ db = get_db()
 # ==========================================
 # 2. JADVALLAR VA YANGI USTUNLARNI YARATISH
 # ==========================================
+@st.cache_resource
 def init_db():
     db.execute("""
         CREATE TABLE IF NOT EXISTS bronlar (
@@ -153,7 +162,6 @@ def init_db():
         )
     """)
 
-    # YANGI TOZA JADVAL: Cheksiz xodimlar va adminlar uchun ('login' PRIMARY KEY bilan)
     db.execute("""
         CREATE TABLE IF NOT EXISTS xodimlar (
             login TEXT PRIMARY KEY,
@@ -179,7 +187,6 @@ def init_db():
         except Exception:
             pass
 
-    # Eski 'users' jadvalidagi loginlarni yangi 'xodimlar' jadvaliga 1 marta ko'chirish
     if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
         try:
             eski = db.fetchall("SELECT login, role, parol FROM users")
@@ -192,8 +199,8 @@ def init_db():
     if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
         db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
         db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('ceo', 'ceo', '777', 'Boshqaruvchi (CEO)')")
+    return True
 
-# Har safar keshga qaramasdan jadvallarni tekshiradi
 init_db()
 
 # ==========================================
@@ -204,6 +211,13 @@ XONALAR = {
     "O'rtadagi": {f"{i}-xona": (2, 250000) for i in range(15, 22)},
     "O'ng tomon": {"22-xona": (2, 150000), "23-xona": (4, 100000), "24-xona": (4, 100000), "25-xona": (4, 100000), "26-xona": (4, 100000), "27-xona": (4, 100000), "28-xona": (2, 150000), "29-xona": (4, 100000), "30-xona": (4, 100000), "31-xona": (4, 100000), "32-xona": (2, 150000), "33-xona": (4, 100000), "34-xona": (4, 100000), "35-xona": (4, 100000), "36-xona": (4, 100000)}
 }
+BARCHA_XONALAR_ROYXATI = []
+XONA_TOMON_MAP = {}
+for t_nomi, x_dict in XONALAR.items():
+    for x_nomi, x_info in x_dict.items():
+        BARCHA_XONALAR_ROYXATI.append(f"{t_nomi} | {x_nomi} ({x_info[0]} kishilik)")
+        XONA_TOMON_MAP[x_nomi] = t_nomi
+
 MUDDATLAR = {"Kunlik": 1, "1 hafta (7 kun)": 7, "10 kun": 10, "15 kun": 15, "1 oylik (30 kun)": 30}
 
 def xona_sigimini_ol(xona_nomi):
@@ -246,6 +260,16 @@ def barcha_bazani_yuklash():
         db.read_df("SELECT * FROM mahsulotlar").to_excel(writer, index=False, sheet_name='Sklad')
         db.read_df("SELECT * FROM savdolar").to_excel(writer, index=False, sheet_name='Market_Savdo')
         db.read_df("SELECT * FROM audit_log").to_excel(writer, index=False, sheet_name='Audit_Log')
+    return output.getvalue()
+
+def haftalik_hisobot_yuklash(bosh_sana_str, tugash_sana_str):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Market_Savdolar')
+        db.read_df("SELECT * FROM xarajatlar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Mayda_Xarajatlar')
+        db.read_df("SELECT * FROM mahsulotlar ORDER BY qoldiq ASC").to_excel(writer, index=False, sheet_name='Sklad_Qoldiq')
+        db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Kassa_Kirimlar')
+        db.read_df("SELECT * FROM audit_log WHERE vaqt >= ? AND vaqt <= ? ORDER BY id DESC", (bosh_sana_str + " 00:00:00", tugash_sana_str + " 23:59:59")).to_excel(writer, index=False, sheet_name='Sklad_va_Tizim_Auditi')
     return output.getvalue()
 
 def chiroyli_kartochka(icon, title, value, bg_color):
