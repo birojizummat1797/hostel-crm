@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, toshkent_vaqti
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
     xona_sigimini_ol, narx_hisobla, id_yaratish,
@@ -58,7 +58,7 @@ if not st.session_state.logged_in:
 # 2. SIDEBAR VA NAVIGATSIYA
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
-bugungi_sana = datetime.today().strftime("%Y-%m-%d")
+bugungi_sana = toshkent_vaqti().strftime("%Y-%m-%d")
 
 st.sidebar.title("🏨 YSH ERP")
 st.sidebar.success(f"👤 **{xodim_ismi}**\n\nRol: {st.session_state.role.upper()}")
@@ -211,11 +211,12 @@ with t2:
                     holat = "To'langan" if qoldiq <= 0 else "Qarzdorlik"
                     yangi_id = id_yaratish(jinsi, kirish_sanasi, toifa)
                     saq_turi = 'Hozir kirish' if bron_turi == "Hozir qabul qilish (Kirish)" else 'Bron'
-                    hozirgi_sana = datetime.now().strftime("%Y-%m-%d")
+                    hozirgi_sana = toshkent_vaqti().strftime("%Y-%m-%d")
+                    kirish_vaqti_toliq = f"{kirish_str} ({toshkent_vaqti().strftime('%H:%M')})"
                     muddat_nomi = f"{kunlar} kun"
 
                     db.execute("""INSERT INTO bronlar (mijoz_id, jinsi, sana, tomon, xona, xona_turi, mijoz, toifa, odam_soni, muddat, kunlar, kunlik_narx, jami_summa, faktik_narx, tolagan_summa, qoldiq, tolov_turi, tolov_tafsiloti, holat, kirish_sanasi, chiqish_sanasi, bron_turi, izoh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                              (yangi_id, jinsi, hozirgi_sana, tomon, xona, "", mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, qoshimcha_izoh.strip()))
+                              (yangi_id, jinsi, kirish_vaqti_toliq, tomon, xona, "", mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, qoshimcha_izoh.strip()))
                     if tolangan > 0:
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (hozirgi_sana, yangi_id, mijoz_ism.strip(), "Yotoq (Qabul)", tolangan, tolov_shakli, t_taf, xodim_ismi))
@@ -224,7 +225,7 @@ with t2:
                     tg_xabar_yubor(
                         f"Yangi {saq_turi}",
                         f"👤 <b>Mijoz:</b> {mijoz_ism} ({odam_soni} kishi)\n"
-                        f"🛏 <b>Xona:</b> {xona} ({kunlar} kun | {kirish_str} -> {chiqish_str})\n"
+                        f"🛏 <b>Xona:</b> {xona} ({kunlar} kun | {kirish_vaqti_toliq} -> {chiqish_str})\n"
                         f"💰 <b>Jami hisob:</b> {yakuniy_narx:,.0f} UZS\n"
                         f"✅ <b>To'ladi:</b> {tolangan:,.0f} UZS ({t_taf})\n"
                         f"⚠️ <b>Qoldiq qarz:</b> {qoldiq:,.0f} UZS",
@@ -335,16 +336,16 @@ with t4:
 
     if not bron_df.empty:
         st.subheader("📅 Oldindan Bron qilinganlar")
-        bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'chiqish_sanasi', 'izoh']].copy()
-        bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish Sanasi", "Chiqish Sanasi", "Izoh"]
+        bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'sana', 'chiqish_sanasi', 'izoh']].copy()
+        bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish Sanasi", "Izoh"]
         for col in ["Jami Summa", "To'langan", "Qoldiq"]: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         st.dataframe(bron_korsatish, use_container_width=True, hide_index=True)
 
     st.subheader("🟢 Hozirgi (Faol) Mijozlar")
     if not faol_df.empty:
-        faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'chiqish_sanasi', 'holat', 'izoh']].copy()
+        faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'sana', 'chiqish_sanasi', 'holat', 'izoh']].copy()
         faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
-        faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish Sanasi", "Chiqish", "Holat", "Izoh"]
+        faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh"]
         for col in ["Jami Summa", "To'langan", "Qoldiq"]: faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         st.dataframe(faol_korsatish.style.apply(rangla_jadval, axis=1), use_container_width=True, hide_index=True)
     else:

@@ -1,7 +1,10 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+def toshkent_vaqti():
+    return datetime.now(timezone.utc) + timedelta(hours=5)
 import io
 import os
 
@@ -247,9 +250,9 @@ def id_yaratish(jinsi, kirish_sanasi_obj, toifa):
     return f"{g_kod}{sana_kod}{t_kod}{tartib:03d}"
 
 def jurnalga_yozish(obyekt_id, xodim, harakat, tafsilot):
-    hozir = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
     db.execute("INSERT INTO audit_log (vaqt, mijoz_id, xodim, harakat, tafsilot) VALUES (?,?,?,?,?)", (hozir, obyekt_id, xodim, harakat, tafsilot))
-
+    
 def barcha_bazani_yuklash():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:

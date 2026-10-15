@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 def get_tg_credentials():
     token, chat_id = None, None
@@ -19,12 +19,14 @@ def get_tg_credentials():
     return token, chat_id
 
 def tg_xabar_yubor(sarlavha, tafsilotlar, xodim, muhim=False):
-    """CEO Telegramiga chiroyli formatda tezkor bildirishnoma yuborish"""
+    """CEO Telegramiga Toshkent vaqti (UTC+5) bilan xabar yuborish"""
     token, chat_id = get_tg_credentials()
     if not token or not chat_id:
         return False
 
-    hozir = datetime.now().strftime("%d.%m.%Y | %H:%M")
+    # Aniq Toshkent vaqti (UTC + 5 soat)
+    uz_vaqti = datetime.now(timezone.utc) + timedelta(hours=5)
+    hozir = uz_vaqti.strftime("%d.%m.%Y | %H:%M")
     belgi = "🚨" if muhim else "🔔"
     
     matn = (
