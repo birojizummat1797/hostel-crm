@@ -153,13 +153,16 @@ def init_db():
         )
     """)
 
+    # YANGI TOZA JADVAL: Cheksiz xodimlar va adminlar uchun ('login' PRIMARY KEY bilan)
     db.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            login TEXT PRIMARY KEY, role TEXT, parol TEXT, ism TEXT DEFAULT ''
+        CREATE TABLE IF NOT EXISTS xodimlar (
+            login TEXT PRIMARY KEY,
+            role TEXT,
+            parol TEXT,
+            ism TEXT DEFAULT ''
         )
     """)
 
-    # Eski bazaga yangi ustunlarni xavfsiz qo'shish
     yangi_ustunlar = [
         "ALTER TABLE bronlar ADD COLUMN bron_turi TEXT DEFAULT 'Hozir kirish'", 
         "ALTER TABLE bronlar ADD COLUMN izoh TEXT DEFAULT ''",
@@ -168,8 +171,7 @@ def init_db():
         "ALTER TABLE mahsulotlar ADD COLUMN izoh TEXT DEFAULT ''",
         "ALTER TABLE mahsulotlar ADD COLUMN tannarx REAL DEFAULT 0",
         "ALTER TABLE savdolar ADD COLUMN tolov_tafsiloti TEXT DEFAULT ''",
-        "ALTER TABLE savdolar ADD COLUMN sof_foyda REAL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN ism TEXT DEFAULT ''"
+        "ALTER TABLE savdolar ADD COLUMN sof_foyda REAL DEFAULT 0"
     ]
     for sql in yangi_ustunlar:
         try:
@@ -177,44 +179,21 @@ def init_db():
         except Exception:
             pass
 
-    # MUHIM: Users jadvalidagi eski 'role' PRIMARY KEY cheklovini 'login' ustuniga o'tkazish
-    if IS_POSTGRES:
+    # Eski 'users' jadvalidagi loginlarni yangi 'xodimlar' jadvaliga 1 marta ko'chirish
+    if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
         try:
-            eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
-            db.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_pkey")
-            db.execute("ALTER TABLE users ADD PRIMARY KEY (login)")
-        except Exception:
-            # Agar baribir xato bersa, jadvalni to'liq qayta tuzamiz
-            try:
-                eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
-                db.execute("DROP TABLE users")
-                db.execute("CREATE TABLE users (login TEXT PRIMARY KEY, role TEXT, parol TEXT, ism TEXT DEFAULT '')")
-                for u in eski_users:
-                    db.execute("INSERT INTO users (login, role, parol, ism) VALUES (?,?,?,?)", (u[0], u[1], u[2], u[3] or ''))
-            except Exception:
-                pass
-    else:
-        try:
-            info = db.fetchall("PRAGMA table_info(users)")
-            for col in info:
-                if col[1] == 'role' and col[5] == 1:
-                    eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
-                    db.execute("DROP TABLE users")
-                    db.execute("CREATE TABLE users (login TEXT PRIMARY KEY, role TEXT, parol TEXT, ism TEXT DEFAULT '')")
-                    for u in eski_users:
-                        db.execute("INSERT INTO users (login, role, parol, ism) VALUES (?,?,?,?)", (u[0], u[1], u[2], u[3] or ''))
-                    break
+            eski = db.fetchall("SELECT login, role, parol FROM users")
+            for u in eski:
+                ism_val = "Boshqaruvchi (CEO)" if u[1] == "ceo" else "Front-Ofis Admini"
+                db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (u[0], u[1], u[2], ism_val))
         except Exception:
             pass
 
-    # Standart foydalanuvchilarni tekshirish
-    if db.fetchone("SELECT COUNT(*) FROM users")[0] == 0:
-        db.execute("INSERT INTO users (role, login, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
-        db.execute("INSERT INTO users (role, login, parol, ism) VALUES ('ceo', 'ceo', '777', 'Boshqaruvchi (CEO)')")
-    else:
-        db.execute("UPDATE users SET ism='Boshqaruvchi (CEO)' WHERE role='ceo' AND (ism IS NULL OR ism='')")
-        db.execute("UPDATE users SET ism='Front-Ofis Admini' WHERE role='admin' AND (ism IS NULL OR ism='')")
+    if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
+        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
+        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('ceo', 'ceo', '777', 'Boshqaruvchi (CEO)')")
 
+# Har safar keshga qaramasdan jadvallarni tekshiradi
 init_db()
 
 # ==========================================

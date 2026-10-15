@@ -123,16 +123,26 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         st.subheader("👥 Tizim foydalanuvchilari va Shaxsiy Admin profillari")
         c_u1, c_u2 = st.columns([1.2, 1])
         with c_u1:
-            df_users = db.read_df("SELECT login, ism, role, parol FROM users")
+            df_users = db.read_df("SELECT login, ism, role, parol FROM xodimlar")
             df_users.columns = ["Login", "Ism-Sharif (Auditda ko'rinadi)", "Rol", "Parol"]
             st.dataframe(df_users, use_container_width=True, hide_index=True)
 
-            och_login = st.selectbox("Xodimni o'chirish (Loginni tanlang):", [l for l in df_users["Login"].tolist() if l != 'ceo'])
-            if st.button("🗑️ Tanlangan xodimni o'chirish"):
-                db.execute("DELETE FROM users WHERE login=?", (och_login,))
-                jurnalga_yozish("Xodimlar", xodim_ismi, "Xodim o'chirildi", f"Login: {och_login}")
-                st.success("Xodim o'chirildi!")
-                st.rerun()
+            och_royxat = [l for l in df_users["Login"].tolist() if l != 'ceo']
+            if och_royxat:
+                och_login = st.selectbox("Xodimni o'chirish (Loginni tanlang):", och_royxat)
+                if st.button("🗑️ Tanlangan xodimni o'chirish"):
+                    db.execute("DELETE FROM xodimlar WHERE login=?", (och_login,))
+                    jurnalga_yozish("Xodimlar", xodim_ismi, "Xodim o'chirildi", f"Login: {och_login}")
+                    st.success("Xodim o'chirildi!")
+                    st.rerun()
+
+            st.markdown("---")
+            if st.button("📲 Telegram Bot aloqasini tekshirish (Test xabar)"):
+                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Telegram bot YSH ERP tizimiga muvaffaqiyatli ulandi!", xodim_ismi)
+                if natija:
+                    st.success("✅ Telegramingizga xabar yuborildi! Tekshirib ko'ring.")
+                else:
+                    st.error("⚠️ Xabar bormadi. Streamlit Secrets ichida TG_BOT_TOKEN va TG_CHAT_ID to'g'ri yozilganini hamda botga /start bosilganini tekshiring.")
 
         with c_u2:
             st.markdown("##### ➕ Yangi Admin (Xodim) qo'shish")
@@ -143,13 +153,14 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                 u_role = st.selectbox("Huquqi (Roli):", ["admin", "ceo"])
                 if st.form_submit_button("➕ Xodimni yaratish", type="primary", use_container_width=True):
                     if u_ism.strip() and u_login.strip() and u_parol.strip():
-                        mavjud = db.fetchone("SELECT login FROM users WHERE login=?", (u_login.strip(),))
+                        mavjud = db.fetchone("SELECT login FROM xodimlar WHERE login=?", (u_login.strip(),))
                         if mavjud:
-                            st.error("Bunday login band!")
+                            st.error("Bunday login band! Boshqa login yozing.")
                         else:
-                            db.execute("INSERT INTO users (login, role, parol, ism) VALUES (?,?,?,?)",
+                            db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)",
                                        (u_login.strip(), u_role, u_parol.strip(), u_ism.strip()))
                             jurnalga_yozish("Xodimlar", xodim_ismi, "Yangi xodim qo'shildi", f"{u_ism} ({u_login}) - {u_role}")
+                            tg_xabar_yubor("Yangi xodim qo'shildi", f"👤 <b>Ism:</b> {u_ism.strip()}\n🔑 <b>Login:</b> {u_login.strip()}\n🛡 <b>Rol:</b> {u_role}", xodim_ismi)
                             st.success(f"✅ {u_ism} tizimga qo'shildi!")
                             st.rerun()
                     else:

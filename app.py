@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from database import (
-    db, IS_POSTGRES, XONALAR, MUDDATLAR,
+    db, init_db, IS_POSTGRES, XONALAR, MUDDATLAR,
     xona_sigimini_ol, narx_hisobla, id_yaratish,
     jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval
 )
@@ -11,6 +11,8 @@ from ceo_panel import render_xarajatlar_va_smena, render_ceo_panel
 
 st.set_page_config(page_title="Yangi Sergeli Hostel CRM", layout="wide")
 st.markdown("""<style>div[data-testid="metric-container"] { background-color: #ffffff; border: 1px solid #e0e6ed; padding: 15px 20px; border-radius: 12px; border-left: 6px solid #4CAF50; box-shadow: 2px 4px 15px rgba(0,0,0,0.05); }</style>""", unsafe_allow_html=True)
+
+init_db()
 
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'role' not in st.session_state: st.session_state.role = None
@@ -30,7 +32,7 @@ if not st.session_state.logged_in:
             parol_input = st.text_input("Parol", type="password")
             submit_login = st.form_submit_button("Kirish", use_container_width=True, type="primary")
             if submit_login:
-                user = db.fetchone("SELECT role, ism, login FROM users WHERE login=? AND parol=?", (login_input.strip(), parol_input.strip()))
+                user = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=? AND parol=?", (login_input.strip(), parol_input.strip()))
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.role = user[0]
@@ -303,7 +305,6 @@ with t4:
     st.header("💼 Mijozlar va Boshqaruv (Front-Ofis)")
     df = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
     
-    # Qidiruv qatori har doim ko'rinib turadi
     qidiruv = st.text_input("🔍 Mijoz F.I.O, ID yoki Xona bo'yicha tezkor qidiruv:", placeholder="Ism, ID yoki xona raqamini yozing...")
     
     if not df.empty:
@@ -321,7 +322,6 @@ with t4:
         faol_df = pd.DataFrame()
         bron_df = pd.DataFrame()
 
-    # 1. Oldindan bron qilinganlar jadvali
     if not bron_df.empty:
         st.subheader("📅 Oldindan Bron qilinganlar")
         bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_sanasi', 'izoh']].copy()
@@ -329,7 +329,6 @@ with t4:
         for col in ["Jami Summa", "To'langan", "Qoldiq"]: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         st.dataframe(bron_korsatish, use_container_width=True, hide_index=True)
 
-    # 2. Hozirgi faol mijozlar jadvali (bo'sh bo'lsa ham sarlavha va xabar chiqadi)
     st.subheader("🟢 Hozirgi (Faol) Mijozlar")
     if not faol_df.empty:
         faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'chiqish_sanasi', 'holat', 'izoh']].copy()
@@ -341,8 +340,6 @@ with t4:
         st.info("📭 Hozircha hostelda faol mijozlar yo'q. Yangi mehmon kiritish uchun **📝 Qabul** bo'limiga o'ting.")
     
     st.markdown("---")
-    
-    # 3. Boshqaruv panellari har doim ekranda turadi
     m1, m2, m3 = st.columns(3)
     with m1:
         st.info("➕ Muddatni cho'zish")
@@ -568,9 +565,9 @@ with t6:
                     st.error("⚠️ Parollar mos tushmadi!")
                 else:
                     if yangi_parol:
-                        db.execute("UPDATE users SET ism=?, parol=? WHERE login=?", (yangi_ism, yangi_parol, st.session_state.user_login))
+                        db.execute("UPDATE xodimlar SET ism=?, parol=? WHERE login=?", (yangi_ism, yangi_parol, st.session_state.user_login))
                     else:
-                        db.execute("UPDATE users SET ism=? WHERE login=?", (yangi_ism, st.session_state.user_login))
+                        db.execute("UPDATE xodimlar SET ism=? WHERE login=?", (yangi_ism, st.session_state.user_login))
                     jurnalga_yozish("Tizim Sozlamalari", xodim_ismi, "Profil yangilandi", "Foydalanuvchi paroli/ismi o'zgartirildi")
                     st.session_state.logged_in = False
                     st.rerun()
