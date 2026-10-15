@@ -151,12 +151,30 @@ with t1:
         st.warning("🛒 " + ", ".join([f"{r['nomi']} ({r['qoldiq']} ta qoldi)" for _, r in df_mahsulotlar.iterrows()]))
 
 # ----------------------------------------------------
-# TAB 2: QABUL VA BRON (100% ZAGRUZKASIZ FORM VA ANIQ SOAT!)
+# TAB 2: QABUL VA BRON (Qanotlar ajratilgan + Zagruzkasiz Form!)
 # ----------------------------------------------------
 with t2:
     st.subheader("📝 Yangi Mijoz Qabul Qilish / Bron")
-    st.caption("⚡ Barcha maydonlarni bemalol to'ldiring — sahifa qotmaydi va zagruzka qilmaydi! Oxirida «Bazaga saqlash» tugmasini bosing.")
     
+    # 1. Qanotni tanlash (xonalar faqat shu qanot bo'yicha chiqishi uchun)
+    tomon = st.radio(
+        "📍 Avval qanotni (tomonni) tanlang:",
+        ["Chap tomon", "O'rtadagi", "O'ng tomon"],
+        horizontal=True
+    )
+    
+    # Tanlangan qanotdagi xonalarni krovat turi va sig'imi bilan chiroyli shakllantirish
+    xona_variantlar = []
+    for x_nom, (sigim, _) in XONALAR[tomon].items():
+        if tomon == "O'rtadagi":
+            tavsif = f"{x_nom} (2 kishilik - Bitta Dvuxspalniy)"
+        elif sigim == 2:
+            tavsif = f"{x_nom} (2 kishilik - 2 ta alohida krovat)"
+        else:
+            tavsif = f"{x_nom} ({sigim} kishilik)"
+        xona_variantlar.append(tavsif)
+
+    # 2. Asosiy ma'lumotlar formasi (ichida hech qanday zagruzka bo'lmaydi)
     with st.form("qabul_form", clear_on_submit=True):
         bron_turi = st.radio("📌 Ro'yxatdan o'tish turi:", ["Hozir qabul qilish (Kirish)", "Oldindan band qilish (Bron)"], horizontal=True)
         st.markdown("---")
@@ -168,8 +186,9 @@ with t2:
             kirish_sanasi = st.date_input("Kirish (kelish) sanasi", toshkent_vaqti().date())
             
         with col2:
-            tanlangan_xona_toliq = st.selectbox("Tomon va Xona raqami", BARCHA_XONALAR_ROYXATI)
-            odam_soni = st.number_input("Odam soni (1 - 4)", min_value=1, max_value=4, value=1)
+            tanlangan_xona_label = st.selectbox(f"🛏 Xona raqami ({tomon}):", xona_variantlar)
+            maks_odam = 2 if tomon == "O'rtadagi" else 4
+            odam_soni = st.number_input(f"Odam soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
             kunlar = st.number_input("Necha kun yashaydi? (7+ kunga 10% chegirma)", min_value=1, max_value=365, value=1)
             maxsus_kunlik = st.number_input("⚙️ Admin maxsus KUNLIK narx (0 = Avto standart hisoblash)", min_value=0, value=0, step=5000)
 
@@ -185,9 +204,9 @@ with t2:
             if not mijoz_ism.strip():
                 st.error("⚠️ Mijoz ismini kiriting!")
             else:
-                tomon = tanlangan_xona_toliq.split(" | ")[0]
-                xona = tanlangan_xona_toliq.split(" | ")[1].split(" (")[0].strip()
+                xona = tanlangan_xona_label.split(" (")[0].strip()
                 xona_sigimi = XONALAR[tomon][xona][0]
+                xona_turi_matn = "Dvuxspalniy" if tomon == "O'rtadagi" else ("2 alohida krovat" if xona_sigimi == 2 else f"{xona_sigimi} kishilik")
                 
                 chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
                 kirish_str = kirish_sanasi.strftime("%Y-%m-%d")
@@ -197,7 +216,9 @@ with t2:
                 band = band_res[0] if band_res and band_res[0] else 0
                 bosh_joy = xona_sigimi - band
                 
-                if odam_soni > bosh_joy:
+                if odam_soni > xona_sigimi:
+                    st.error(f"⚠️ {xona} jami {xona_sigimi} kishilik! Siz {odam_soni} kishi kiritdingiz.")
+                elif odam_soni > bosh_joy:
                     st.error(f"⚠️ Xatolik: {xona} da tanlangan sanalar uchun faqat {bosh_joy} ta bo'sh joy bor (Siz {odam_soni} kishi kiritdingiz)!")
                 else:
                     kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar)
@@ -223,23 +244,23 @@ with t2:
                     muddat_nomi = f"{kunlar} kun"
 
                     db.execute("""INSERT INTO bronlar (mijoz_id, jinsi, sana, tomon, xona, xona_turi, mijoz, toifa, odam_soni, muddat, kunlar, kunlik_narx, jami_summa, faktik_narx, tolagan_summa, qoldiq, tolov_turi, tolov_tafsiloti, holat, kirish_sanasi, chiqish_sanasi, bron_turi, izoh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                              (yangi_id, jinsi, kirish_vaqti_toliq, tomon, xona, "", mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, qoshimcha_izoh.strip()))
+                              (yangi_id, jinsi, kirish_vaqti_toliq, tomon, xona, xona_turi_matn, mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, qoshimcha_izoh.strip()))
                     if tolangan > 0:
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (hozirgi_sana, yangi_id, mijoz_ism.strip(), "Yotoq (Qabul)", tolangan, tolov_shakli, t_taf, xodim_ismi))
-                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism}, Xona: {xona}, Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
+                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism}, Xona: {xona} ({xona_turi_matn}), Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
                     
                     tg_xabar_yubor(
                         f"Yangi {saq_turi}",
                         f"👤 <b>Mijoz:</b> {mijoz_ism} ({odam_soni} kishi)\n"
-                        f"🛏 <b>Xona:</b> {xona} ({kunlar} kun)\n"
+                        f"🛏 <b>Xona:</b> {xona} — {xona_turi_matn} ({kunlar} kun)\n"
                         f"🕒 <b>Kirish:</b> {kirish_vaqti_toliq} ➡️ <b>Chiqish:</b> {chiqish_str} 12:00\n"
                         f"💰 <b>Jami hisob:</b> {yakuniy_narx:,.0f} UZS\n"
                         f"✅ <b>To'ladi:</b> {tolangan:,.0f} UZS ({t_taf})\n"
                         f"⚠️ <b>Qoldiq qarz:</b> {qoldiq:,.0f} UZS",
                         xodim_ismi, muhim=maxsus_belgi
                     )
-                    st.success(f"✅ Mijoz ({mijoz_ism}) {xona} ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
+                    st.success(f"✅ Mijoz ({mijoz_ism}) {xona} ({xona_turi_matn}) ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
                     st.rerun()
 
 # ----------------------------------------------------
