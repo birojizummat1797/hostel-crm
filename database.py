@@ -177,6 +177,36 @@ def init_db():
         except Exception:
             pass
 
+    # MUHIM: Users jadvalidagi eski 'role' PRIMARY KEY cheklovini 'login' ustuniga o'tkazish
+    if IS_POSTGRES:
+        try:
+            eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
+            db.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_pkey")
+            db.execute("ALTER TABLE users ADD PRIMARY KEY (login)")
+        except Exception:
+            # Agar baribir xato bersa, jadvalni to'liq qayta tuzamiz
+            try:
+                eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
+                db.execute("DROP TABLE users")
+                db.execute("CREATE TABLE users (login TEXT PRIMARY KEY, role TEXT, parol TEXT, ism TEXT DEFAULT '')")
+                for u in eski_users:
+                    db.execute("INSERT INTO users (login, role, parol, ism) VALUES (?,?,?,?)", (u[0], u[1], u[2], u[3] or ''))
+            except Exception:
+                pass
+    else:
+        try:
+            info = db.fetchall("PRAGMA table_info(users)")
+            for col in info:
+                if col[1] == 'role' and col[5] == 1:
+                    eski_users = db.fetchall("SELECT login, role, parol, ism FROM users")
+                    db.execute("DROP TABLE users")
+                    db.execute("CREATE TABLE users (login TEXT PRIMARY KEY, role TEXT, parol TEXT, ism TEXT DEFAULT '')")
+                    for u in eski_users:
+                        db.execute("INSERT INTO users (login, role, parol, ism) VALUES (?,?,?,?)", (u[0], u[1], u[2], u[3] or ''))
+                    break
+        except Exception:
+            pass
+
     # Standart foydalanuvchilarni tekshirish
     if db.fetchone("SELECT COUNT(*) FROM users")[0] == 0:
         db.execute("INSERT INTO users (role, login, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
