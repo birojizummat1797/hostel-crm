@@ -10,7 +10,7 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
     st.markdown("---")
 
     if tanlov == "➖ Yangi Xarajat kiritish":
-        with st.form("xarajat_form", clear_on_submit=True):
+        with st.form("xarajat_form", clear_on_submit=True, enter_to_submit=False):
             c1, c2 = st.columns(2)
             with c1:
                 kat = st.selectbox("Xarajat turi:", ["Xo'jalik va Tozalik vositalari", "Kommunal to'lovlar", "Oziq-ovqat (Non, choy...)", "Ta'mirlash (Santexnik, usta...)", "Xodimlar avansi / maoshi", "Boshqa xarajat"])
@@ -47,7 +47,7 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
         k3.metric("➖ Jami Xarajatlar", f"{umumiy_xarajat:,.0f} UZS")
         k4.metric("🏦 Kassadagi Sof Naqd", f"{sof_naqd_kassa:,.0f} UZS")
 
-        with st.form("smena_form", clear_on_submit=True):
+        with st.form("smena_form", clear_on_submit=True, enter_to_submit=False):
             smena_izoh = st.text_area("Smena bo'yicha izoh (ixtiyoriy):", placeholder="Smena tinch o'tdi, kalitlar va kassa topshirildi...")
             if st.form_submit_button("✅ Smenani yopish va Hisobotga saqlash", type="primary", use_container_width=True):
                 hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
@@ -148,7 +148,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
             faollar = df_admin[df_admin['holat'] != 'Chiqib ketgan']
             arxivdagilar = df_admin[df_admin['holat'] == 'Chiqib ketgan']
             if not faollar.empty:
-                with st.form("checkout_form"):
+                with st.form("checkout_form", enter_to_submit=False):
                     korsatkich = faollar['mijoz_id'] + " - " + faollar['mijoz'] + " (" + faollar['xona'] + " | Chiqish: " + faollar['chiqish_sanasi'] + " 12:00)"
                     chiq_id_toliq = st.selectbox("Muddatidan oldin yoki hozir xonani bo'shatadigan mijoz:", korsatkich)
                     if st.form_submit_button("🚪 Mijozni chiqarish va Arxivlash", type="primary"):
@@ -187,7 +187,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
 
             och_royxat = [l for l in df_users["Login"].tolist() if l != 'ceo']
             if och_royxat:
-                with st.form("del_user_form"):
+                with st.form("del_user_form", enter_to_submit=False):
                     och_login = st.selectbox("Xodimni o'chirish (Loginni tanlang):", och_royxat)
                     if st.form_submit_button("🗑️ Tanlangan xodimni o'chirish"):
                         db.execute("DELETE FROM xodimlar WHERE login=?", (och_login,))
@@ -205,7 +205,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
 
         with c_u2:
             st.markdown("##### ➕ Yangi Admin (Xodim) qo'shish")
-            with st.form("new_user_form", clear_on_submit=True):
+            with st.form("new_user_form", clear_on_submit=True, enter_to_submit=False):
                 u_ism = st.text_input("Xodim Ism-Sharifi (masalan: Admin Sardor)")
                 u_login = st.text_input("Kirish uchun Login (masalan: sardor)")
                 u_parol = st.text_input("Parol")
@@ -254,7 +254,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                 t_mijoz = st.selectbox("Mijozni tanlang:", df_b['mijoz_id'] + " - " + df_b['mijoz'] + " (" + df_b['xona'] + ")")
                 m_id_izoh = t_mijoz.split(" - ")[0]
                 joriy_izoh = str(df_b[df_b['mijoz_id'] == m_id_izoh]['izoh'].values[0] or '')
-                with st.form("izoh_mijoz_form"):
+                with st.form("izoh_mijoz_form", enter_to_submit=False):
                     yangi_izoh = st.text_area("Izoh yozing:", value=joriy_izoh)
                     if st.form_submit_button("💾 Izohni Saqlash (Mijoz)", type="primary"):
                         db.execute("UPDATE bronlar SET izoh=? WHERE mijoz_id=?", (yangi_izoh.strip(), m_id_izoh))
@@ -270,7 +270,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                 t_mahs = st.selectbox("Mahsulotni tanlang:", df_m['korsatkich'])
                 m_id_m = int(df_m[df_m['korsatkich'] == t_mahs]['id'].values[0])
                 joriy_izoh_m = str(df_m[df_m['id'] == m_id_m]['izoh'].values[0] or '')
-                with st.form("izoh_sklad_form"):
+                with st.form("izoh_sklad_form", enter_to_submit=False):
                     yangi_izoh_m = st.text_area("Izoh yozing:", value=joriy_izoh_m)
                     if st.form_submit_button("💾 Izohni Saqlash (Mahsulot)", type="primary"):
                         db.execute("UPDATE mahsulotlar SET izoh=? WHERE id=?", (yangi_izoh_m.strip(), m_id_m))
@@ -283,7 +283,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
     elif ceo_tanlov == "🗑️ O'chirish":
         st.error("🚨 XAVFLI ZONA: Bu yerdan o'chirilgan mijoz qayta tiklanmaydi!")
         if not df_admin.empty:
-            with st.form("del_mijoz_form"):
+            with st.form("del_mijoz_form", enter_to_submit=False):
                 del_id = st.selectbox("O'chiriladigan ID:", df_admin['mijoz_id'] + " - " + df_admin['mijoz'])
                 if st.form_submit_button("⚠️ Butunlay o'chirish"):
                     och_id = del_id.split(" - ")[0]

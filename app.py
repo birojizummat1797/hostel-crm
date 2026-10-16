@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
-    xona_sigimini_ol, narx_hisobla, id_yaratish,
+    xona_sigimini_ol, xonadagi_band_joyni_hisobla, narx_hisobla, id_yaratish,
     jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval,
     toshkent_vaqti, avto_checkout_tekshir, avto_kenglik_sozla
 )
@@ -42,7 +42,7 @@ if not st.session_state.logged_in and "user" in st.query_params:
         st.session_state.user_login = user[2]
 
 # ==========================================
-# 1. LOGIN OYNASI (ZAGRUZKASIZ FORM)
+# 1. LOGIN OYNASI
 # ==========================================
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #2E3B55; margin-top: 50px;'>🏨 Yangi Sergeli Hostel | Y.S.H. ERP</h1>", unsafe_allow_html=True)
@@ -115,7 +115,7 @@ else:
     t5 = None
 
 # ----------------------------------------------------
-# TAB 1: AQLLI DASHBOARD (Tartibli Kassa va Sklad jadvali)
+# TAB 1: AQLLI DASHBOARD
 # ----------------------------------------------------
 with t1:
     st.header("📈 Moliya va Hostel Analitikasi")
@@ -128,6 +128,7 @@ with t1:
     if 'qoldiq' in df_barcha.columns: df_barcha['qoldiq'] = df_barcha['qoldiq'].fillna(0)
 
     faol_mijozlar = df_barcha[(df_barcha['holat'] != 'Chiqib ketgan') & (df_barcha['kirish_sanasi'] <= bugungi_sana)] if not df_barcha.empty else pd.DataFrame()
+    faol_odam_soni = int(faol_mijozlar['odam_soni'].fillna(1).sum()) if not faol_mijozlar.empty else 0
     umumiy_kassa_yotoq = df_barcha['tolagan_summa'].sum() if not df_barcha.empty else 0
     umumiy_kassa_market = df_savdolar[df_savdolar['tolov_turi'] == 'Darhol']['jami_summa'].sum() if not df_savdolar.empty else 0
     jami_xarajatlar = df_xarajat['summa'].fillna(0).sum() if not df_xarajat.empty else 0
@@ -135,7 +136,7 @@ with t1:
     sof_balans = (umumiy_kassa_yotoq + umumiy_kassa_market) - jami_xarajatlar
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: st.markdown(chiroyli_kartochka("👥", "Faol Mehmon", f"{len(faol_mijozlar)} ta", "#8b5cf6"), unsafe_allow_html=True)
+    with c1: st.markdown(chiroyli_kartochka("👥", "Faol Mehmon", f"{faol_odam_soni} kishi ({len(faol_mijozlar)} bron)", "#8b5cf6"), unsafe_allow_html=True)
     with c2: st.markdown(chiroyli_kartochka("💰", "Yotoq Tushum", f"{umumiy_kassa_yotoq:,.0f}", "#f59e0b"), unsafe_allow_html=True)
     with c3: st.markdown(chiroyli_kartochka("🛒", "Market Savdo", f"{umumiy_kassa_market:,.0f}", "#10b981"), unsafe_allow_html=True)
     with c4: st.markdown(chiroyli_kartochka("➖", "Xarajatlar", f"{jami_xarajatlar:,.0f}", "#64748b"), unsafe_allow_html=True)
@@ -215,7 +216,7 @@ with t1:
             )
 
 # ----------------------------------------------------
-# TAB 2: QABUL VA BRON (Qanotlar ajratilgan + Zagruzkasiz Form!)
+# TAB 2: QABUL VA BRON (Enter bosilganda saqlanmaydi + To'liq Xona Vikup!)
 # ----------------------------------------------------
 with t2:
     st.subheader("📝 Yangi Mijoz Qabul Qilish / Bron")
@@ -236,7 +237,7 @@ with t2:
             tavsif = f"{x_nom} ({sigim} kishilik)"
         xona_variantlar.append(tavsif)
 
-    with st.form("qabul_form", clear_on_submit=True):
+    with st.form("qabul_form", clear_on_submit=True, enter_to_submit=False):
         bron_turi = st.radio("📌 Ro'yxatdan o'tish turi:", ["Hozir qabul qilish (Kirish)", "Oldindan band qilish (Bron)"], horizontal=True)
         st.markdown("---")
         col1, col2, col3 = st.columns(3)
@@ -249,7 +250,8 @@ with t2:
         with col2:
             tanlangan_xona_label = st.selectbox(f"🛏 Xona raqami ({tomon}):", xona_variantlar)
             maks_odam = 2 if tomon == "O'rtadagi" else 4
-            odam_soni = st.number_input(f"Odam soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
+            odam_soni = st.number_input(f"Mijozlar (odam) soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
+            toliq_band_vikup = st.checkbox("🔒 Xonani to'liq band qilish (Vikup — begona kiritilmasin, to'liq xona narxida)")
             kunlar = st.number_input("Necha kun yashaydi? (7+ kunga 10% chegirma)", min_value=1, max_value=365, value=1)
             maxsus_kunlik = st.number_input("⚙️ Admin maxsus KUNLIK narx (0 = Avto standart hisoblash)", min_value=0, value=0, step=5000)
 
@@ -267,22 +269,25 @@ with t2:
             else:
                 xona = tanlangan_xona_label.split(" (")[0].strip()
                 xona_sigimi = XONALAR[tomon][xona][0]
-                xona_turi_matn = "Dvuxspalniy" if tomon == "O'rtadagi" else ("2 alohida krovat" if xona_sigimi == 2 else f"{xona_sigimi} kishilik")
+                bazaviy_tur = "Dvuxspalniy" if tomon == "O'rtadagi" else ("2 alohida krovat" if xona_sigimi == 2 else f"{xona_sigimi} kishilik")
+                xona_turi_matn = f"To'liq band ({bazaviy_tur})" if (toliq_band_vikup or tomon == "O'rtadagi") else bazaviy_tur
                 
                 chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
                 kirish_str = kirish_sanasi.strftime("%Y-%m-%d")
                 chiqish_str = chiqish_sanasi.strftime("%Y-%m-%d")
                 
-                band_res = db.fetchone("SELECT SUM(odam_soni) FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?", (xona, chiqish_str, kirish_str))
-                band = band_res[0] if band_res and band_res[0] else 0
+                band = xonadagi_band_joyni_hisobla(xona, kirish_str, chiqish_str)
                 bosh_joy = xona_sigimi - band
+                kerakli_joy = xona_sigimi if toliq_band_vikup else odam_soni
                 
                 if odam_soni > xona_sigimi:
                     st.error(f"⚠️ {xona} jami {xona_sigimi} kishilik! Siz {odam_soni} kishi kiritdingiz.")
-                elif odam_soni > bosh_joy:
-                    st.error(f"⚠️ Xatolik: {xona} da tanlangan sanalar uchun faqat {bosh_joy} ta bo'sh joy bor (Siz {odam_soni} kishi kiritdingiz)!")
+                elif toliq_band_vikup and band > 0:
+                    st.error(f"⚠️ {xona} ni to'liq band (Vikup) qilib bo'lmaydi, chunki tanlangan sanalarda xonada boshqa mijoz bor!")
+                elif kerakli_joy > bosh_joy:
+                    st.error(f"⚠️ Xatolik: {xona} da tanlangan sanalar uchun bo'sh joy yetarli emas (Bo'sh joy: {bosh_joy} ta)!")
                 else:
-                    kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar)
+                    kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=toliq_band_vikup)
                     if maxsus_kunlik > 0:
                         kunlik_stavka = maxsus_kunlik
                         yakuniy_narx = maxsus_kunlik * kunlar
@@ -304,12 +309,16 @@ with t2:
                     kirish_vaqti_toliq = f"{kirish_str} ({uz_now.strftime('%H:%M')})"
                     muddat_nomi = f"{kunlar} kun"
 
+                    izoh_yakuniy = qoshimcha_izoh.strip()
+                    if toliq_band_vikup and "To'liq xona" not in izoh_yakuniy:
+                        izoh_yakuniy = f"[🔒 To'liq xona vikup] {izoh_yakuniy}".strip()
+
                     db.execute("""INSERT INTO bronlar (mijoz_id, jinsi, sana, tomon, xona, xona_turi, mijoz, toifa, odam_soni, muddat, kunlar, kunlik_narx, jami_summa, faktik_narx, tolagan_summa, qoldiq, tolov_turi, tolov_tafsiloti, holat, kirish_sanasi, chiqish_sanasi, bron_turi, izoh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                              (yangi_id, jinsi, kirish_vaqti_toliq, tomon, xona, xona_turi_matn, mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, qoshimcha_izoh.strip()))
+                              (yangi_id, jinsi, kirish_vaqti_toliq, tomon, xona, xona_turi_matn, mijoz_ism.strip(), toifa, odam_soni, muddat_nomi, kunlar, kunlik_stavka, standart_jami, yakuniy_narx, tolangan, qoldiq, tolov_shakli, t_taf, holat, kirish_str, chiqish_str, saq_turi, izoh_yakuniy))
                     if tolangan > 0:
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (hozirgi_sana, yangi_id, mijoz_ism.strip(), "Yotoq (Qabul)", tolangan, tolov_shakli, t_taf, xodim_ismi))
-                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism}, Xona: {xona} ({xona_turi_matn}), Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
+                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism} ({odam_soni} kishi), Xona: {xona} ({xona_turi_matn}), Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
                     
                     tg_xabar_yubor(
                         f"Yangi {saq_turi}",
@@ -325,7 +334,7 @@ with t2:
                     st.rerun()
 
 # ----------------------------------------------------
-# TAB 3: METRO SHAXMATKA
+# TAB 3: METRO SHAXMATKA (To'liq band / Vikup hisobga olingan)
 # ----------------------------------------------------
 with t3:
     st.header("🔲 15-kunlik Xonalar Shaxmatkasi")
@@ -337,7 +346,7 @@ with t3:
     bosh_sana_str = bosh_sana.strftime("%Y-%m-%d")
     oxirgi_sana_str = (bosh_sana + timedelta(days=15)).strftime("%Y-%m-%d")
     
-    oraliq_bronlar = db.read_df("SELECT xona, kirish_sanasi, chiqish_sanasi, odam_soni FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi > ?", (oxirgi_sana_str, bosh_sana_str))
+    oraliq_bronlar = db.read_df("SELECT xona, xona_turi, kirish_sanasi, chiqish_sanasi, odam_soni FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi > ?", (oxirgi_sana_str, bosh_sana_str))
     
     matrix = []
     for tomon, xonalar in XONALAR.items():
@@ -352,7 +361,12 @@ with t3:
                 band = 0
                 if not xona_bronlar.empty:
                     band_mask = (xona_bronlar['kirish_sanasi'] <= d_str) & (xona_bronlar['chiqish_sanasi'] > d_str)
-                    band = xona_bronlar[band_mask]['odam_soni'].sum()
+                    kunlik_df = xona_bronlar[band_mask]
+                    for _, b_row in kunlik_df.iterrows():
+                        if "To'liq band" in str(b_row.get('xona_turi', '') or ''):
+                            band += sigim
+                        else:
+                            band += int(b_row.get('odam_soni', 1) or 1)
                 bosh = sigim - band
                 qator[d.strftime("%d.%m")] = "🟩 Bo'sh" if bosh == sigim else "🟥 Band" if bosh <= 0 else f"🟨 {bosh} ta"
             matrix.append(qator)
@@ -375,8 +389,8 @@ with t3:
         xona_nomi = xona_nomi.split(" (")[0].strip()
         umumiy_sigim = xona_sigimini_ol(xona_nomi)
         
-        bugun_ichidagilar = db.fetchall("SELECT mijoz, jinsi, sana, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<=? AND chiqish_sanasi>?", (xona_nomi, bugungi_sana, bugungi_sana))
-        kelajakdagi_bronlar = db.fetchall("SELECT mijoz, jinsi, kirish_sanasi, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi>?", (xona_nomi, bugungi_sana))
+        bugun_ichidagilar = db.fetchall("SELECT mijoz, jinsi, sana, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<=? AND chiqish_sanasi>?", (xona_nomi, bugungi_sana, bugungi_sana))
+        kelajakdagi_bronlar = db.fetchall("SELECT mijoz, jinsi, kirish_sanasi, chiqish_sanasi, tolagan_summa, qoldiq, odam_soni, izoh, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi>?", (xona_nomi, bugungi_sana))
         
         if not bugun_ichidagilar and not kelajakdagi_bronlar:
             st.success(f"🟢 **XONA TO'LIQ BO'SH — {xona_nomi} ({umumiy_sigim} kishilik)**")
@@ -384,23 +398,29 @@ with t3:
             eng_yaqin = sorted(kelajakdagi_bronlar, key=lambda x: x[2])[0]
             st.warning(f"🟡 **XONA HOZIR BO'SH, lekin {eng_yaqin[2]} dan boshlab band qilingan! — {xona_nomi}**")
         else:
-            band_qilingan_joylar = sum([m[6] for m in bugun_ichidagilar])
-            qoldiq_joy = umumiy_sigim - band_qilingan_joylar
-            if qoldiq_joy > 0: st.warning(f"🟡 **XONADA HOZIR MIJOZLAR BOR — Qoldiq o'rin: {qoldiq_joy} ta. {xona_nomi}**")
-            else: st.error(f"🔴 **XONA HOZIR TO'LIQ BAND — {xona_nomi}**")
+            toliq_vikup_bor = any("To'liq band" in str(m[8] or '') for m in bugun_ichidagilar)
+            band_qilingan_joylar = umumiy_sigim if toliq_vikup_bor else sum([m[6] for m in bugun_ichidagilar])
+            qoldiq_joy = max(0, umumiy_sigim - band_qilingan_joylar)
+            if qoldiq_joy > 0:
+                st.warning(f"🟡 **XONADA HOZIR MIJOZLAR BOR — Bo'sh o'rin: {qoldiq_joy} ta. ({xona_nomi})**")
+            else:
+                vikup_belgi = " [🔒 TO'LIQ VIKUP QILINGAN]" if toliq_vikup_bor else ""
+                st.error(f"🔴 **XONA HOZIR TO'LIQ BAND{vikup_belgi} — {xona_nomi}**")
         
         if bugun_ichidagilar:
             st.markdown("**Hozirgi mijozlar:**")
             for m in bugun_ichidagilar:
+                vik_m = " 🔒 *(To'liq xona vikup)*" if "To'liq band" in str(m[8] or '') else ""
                 qarz_matni = f" | ⚠️ Qarz: {m[5]:,.0f} UZS" if m[5] > 0 else (f" | 💎 Avans: +{abs(m[5]):,.0f} UZS" if m[5] < 0 else "")
-                st.markdown(f"- **{m[0]}** ({m[6]} kishi | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
+                st.markdown(f"- **{m[0]}** ({m[6]} kishi{vik_m} | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
                 if m[7]: st.info(f"💡 **Izoh:** {m[7]}")
                 
         if kelajakdagi_bronlar:
             st.info(f"📅 **Ushbu xonaga kelajakdagi bronlar ({len(kelajakdagi_bronlar)} ta):**")
             for b in kelajakdagi_bronlar:
+                vik_b = " 🔒 *(To'liq xona vikup)*" if "To'liq band" in str(b[8] or '') else ""
                 b_qarz = f" | ⚠️ Qarz: {b[5]:,.0f} UZS" if b[5] > 0 else ""
-                st.markdown(f"- 🕒 Keladi: **{b[2]} 12:00** ({b[6]} kishi) - **{b[0]}** • 🛫 Ketadi: {b[3]} 12:00{b_qarz}")
+                st.markdown(f"- 🕒 Keladi: **{b[2]} 12:00** ({b[6]} kishi{vik_b}) - **{b[0]}** • 🛫 Ketadi: {b[3]} 12:00{b_qarz}")
                 if b[7]: st.info(f"💡 **Izoh:** {b[7]}")
     else:
         st.info("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan biror qatorni ustiga bosing.")
@@ -410,7 +430,7 @@ with t3:
 # ----------------------------------------------------
 with t4:
     st.header("💼 Mijozlar va Boshqaruv (Front-Ofis)")
-    st.caption("🟢 Yashil — To'langan faol mijoz | 🟡 Sariq — Bugun 12:00 da ketish vaqti kelgan (12:00 da avtomatik arxivlanadi) | 🔴 Qizil — Qarzdor")
+    st.caption("🟢 Yashil — To'langan faol mijoz | 🟡 Sariq — Bugun 12:00 da ketish vaqti kelgan (12:00 da avtomatik arxivlanadi) | 🔴 Qizil — Qarzdor | 🔒 — To'liq xonani band qilgan (Vikup)")
     df = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
     
     qidiruv = st.text_input("🔍 Mijoz F.I.O, ID, Xona yoki Izoh bo'yicha tezkor qidiruv:", placeholder="Ism, ID, xona yoki izohdagi so'zni yozing...")
@@ -420,9 +440,14 @@ with t4:
         df['tolagan_summa'] = df['tolagan_summa'].fillna(0)
         df['qoldiq'] = df['qoldiq'].fillna(0)
         df['izoh'] = df['izoh'].fillna('')
+        df['xona_turi'] = df['xona_turi'].fillna('')
         
         df['kirish_vaqti_korsat'] = df.apply(
             lambda r: str(r['sana']) if '(' in str(r.get('sana', '')) else f"{r.get('kirish_sanasi', '')} (12:00)",
+            axis=1
+        )
+        df['xona_korsat'] = df.apply(
+            lambda r: f"{r['xona']} 🔒 (To'liq)" if "To'liq band" in str(r.get('xona_turi', '')) else str(r['xona']),
             axis=1
         )
         
@@ -461,7 +486,7 @@ with t4:
 
     if not bron_df.empty:
         st.subheader("📅 Oldindan Bron qilinganlar")
-        bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'izoh']].copy()
+        bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'izoh']].copy()
         bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh (To'liq)"]
         for col in ["Jami Summa", "To'langan"]: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         bron_korsatish["Qoldiq"] = bron_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
@@ -469,7 +494,7 @@ with t4:
 
     st.subheader("🟢 Hozirgi (Faol) Mijozlar")
     if not faol_df.empty:
-        faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
+        faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
         faol_korsatish['holat'] = faol_df.apply(aqlli_holat_matni, axis=1)
         faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
         faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh (To'liq)"]
@@ -496,7 +521,7 @@ with t4:
             q_row = qarzdorlar[qarzdorlar['mijoz_id'] == q_id].iloc[0]
             joriy_qarz_sum = int(q_row['qoldiq'])
 
-            with st.form("qarz_form"):
+            with st.form("qarz_form", enter_to_submit=False):
                 c_q1, c_q2 = st.columns(2)
                 with c_q1:
                     tolov_sum = st.number_input("Olinayotgan summa (UZS):", min_value=1000, step=5000, value=joriy_qarz_sum)
@@ -521,7 +546,7 @@ with t4:
 
     elif amal_tanlov == "➕ Muddatni cho'zish":
         if not barcha_faol_va_bron.empty:
-            with st.form("muddat_form"):
+            with st.form("muddat_form", enter_to_submit=False):
                 tanlangan_id_chozish = st.selectbox("Mijozni tanlang:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (" + barcha_faol_va_bron['xona'] + ")")
                 qoshimcha_kun = st.number_input("Necha kun qo'shilmoqda?", min_value=1, value=1)
                 if st.form_submit_button("➕ Muddatni cho'zish", type="primary", use_container_width=True):
@@ -541,9 +566,10 @@ with t4:
 
     elif amal_tanlov == "🛏 Xonadan-xonaga ko'chirish":
         if not barcha_faol_va_bron.empty:
-            with st.form("kochirish_form"):
+            with st.form("kochirish_form", enter_to_submit=False):
                 koch_mijoz = st.selectbox("Ko'chiriladigan mijoz:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (Hozir: " + barcha_faol_va_bron['xona'] + ")")
                 y_xona_toliq = st.selectbox("Yangi Xonani tanlang:", BARCHA_XONALAR_ROYXATI)
+                koch_toliq_band = st.checkbox("🔒 Yangi xonani to'liq band qilish (Vikup)")
                 if st.form_submit_button("🔄 Xonani almashtirish", type="primary", use_container_width=True):
                     k_id = koch_mijoz.split(" - ")[0]
                     k_data = barcha_faol_va_bron[barcha_faol_va_bron['mijoz_id'] == k_id].iloc[0]
@@ -553,16 +579,19 @@ with t4:
                     m_odam = int(k_data['odam_soni'] or 1)
                     
                     y_sigim = XONALAR[y_tomon][y_xona][0]
-                    band_res = db.fetchone("SELECT SUM(odam_soni) FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?", (y_xona, k_id, k_data['chiqish_sanasi'], k_data['kirish_sanasi']))
-                    band_joy = band_res[0] if band_res and band_res[0] else 0
+                    band_joy = xonadagi_band_joyni_hisobla(y_xona, k_data['kirish_sanasi'], k_data['chiqish_sanasi'], exclude_mijoz_id=k_id)
                     bosh_joy = y_sigim - band_joy
+                    kerakli = y_sigim if koch_toliq_band else m_odam
                     
-                    if m_odam > bosh_joy:
-                        st.error(f"⚠️ {y_xona} da faqat {bosh_joy} ta bo'sh joy bor (Mijoz {m_odam} kishi)!")
+                    if m_odam > y_sigim:
+                        st.error(f"⚠️ {y_xona} jami {y_sigim} kishilik (Mijoz esa {m_odam} kishi)!")
+                    elif kerakli > bosh_joy:
+                        st.error(f"⚠️ {y_xona} da yetarli bo'sh joy yo'q (Bo'sh joy: {bosh_joy} ta)!")
                     else:
-                        y_xona_turi = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
+                        baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
+                        y_xona_turi = f"To'liq band ({baz_tur})" if (koch_toliq_band or y_tomon == "O'rtadagi") else baz_tur
                         db.execute("UPDATE bronlar SET tomon=?, xona=?, xona_turi=? WHERE mijoz_id=?", (y_tomon, y_xona, y_xona_turi, k_id))
-                        jurnalga_yozish(k_id, xodim_ismi, "Xona ko'chirildi", f"{k_data['mijoz']}: {eski_xona} -> {y_xona}")
+                        jurnalga_yozish(k_id, xodim_ismi, "Xona ko'chirildi", f"{k_data['mijoz']}: {eski_xona} -> {y_xona} ({y_xona_turi})")
                         tg_xabar_yubor("Xona almashtirildi", f"👤 <b>Mijoz:</b> {k_data['mijoz']}\n🔄 <b>Ko'chirildi:</b> {eski_xona} ➡️ {y_xona} ({y_xona_turi})", xodim_ismi)
                         st.success(f"Mijoz {y_xona} ga ko'chirildi!")
                         st.rerun()
@@ -575,7 +604,7 @@ with t4:
             t_id = tahrir_tanlov.split(" - ")[0]
             t_row = df[df['mijoz_id'] == t_id].iloc[0]
 
-            with st.form("tahrirlash_form"):
+            with st.form("tahrirlash_form", enter_to_submit=False):
                 st.caption(f"🆔 Mijoz ID: **{t_id}** ma'lumotlarini o'zgartirish")
                 e1, e2, e3 = st.columns(3)
                 with e1:
@@ -587,6 +616,8 @@ with t4:
                             break
                     y_xona_str = st.selectbox("Xona:", BARCHA_XONALAR_ROYXATI, index=joriy_xona_idx)
                     y_odam = st.number_input("Odam soni:", min_value=1, max_value=10, value=int(t_row['odam_soni'] or 1))
+                    eski_vikup = "To'liq band" in str(t_row.get('xona_turi', '') or '')
+                    y_vikup = st.checkbox("🔒 Xona to'liq band (Vikup)", value=eski_vikup)
                 with e2:
                     try:
                         def_kirish = datetime.strptime(str(t_row['kirish_sanasi']), "%Y-%m-%d")
@@ -607,7 +638,8 @@ with t4:
                     y_tomon = y_xona_str.split(" | ")[0]
                     y_xona = y_xona_str.split(" | ")[1].split(" (")[0].strip()
                     y_sigim = XONALAR[y_tomon][y_xona][0]
-                    y_xona_turi = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
+                    baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
+                    y_xona_turi = f"To'liq band ({baz_tur})" if (y_vikup or y_tomon == "O'rtadagi") else baz_tur
                     y_kirish_str = y_kirish.strftime("%Y-%m-%d")
                     y_sana_vaqt_toliq = f"{y_kirish_str} ({y_soat.strip()})"
                     y_chiqish_str = (y_kirish + timedelta(days=y_kunlar)).strftime("%Y-%m-%d")
@@ -629,11 +661,11 @@ with t4:
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (bugungi_sana, t_id, y_ism.strip(), "Tahrirlash (Kassa tuzatish)", farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
 
-                    jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism}, Xona: {y_xona}, Kirish: {y_sana_vaqt_toliq}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
+                    jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism}, Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
                     tg_xabar_yubor(
                         "Mijoz ma'lumotlari tahrirlandi",
                         f"🆔 <b>ID:</b> {t_id}\n"
-                        f"👤 <b>Mijoz:</b> {y_ism} ({y_xona})\n"
+                        f"👤 <b>Mijoz:</b> {y_ism} ({y_xona} — {y_xona_turi})\n"
                         f"🕒 <b>Kirish:</b> {y_sana_vaqt_toliq} ➡️ <b>Chiqish:</b> {y_chiqish_str} ({y_kunlar} kun)\n"
                         f"💰 <b>Yangi jami:</b> {y_faktik:,.0f} UZS | <b>To'lagan:</b> {y_tolagan:,.0f} UZS | <b>Qoldiq:</b> {max(0, y_qoldiq):,.0f} UZS",
                         xodim_ismi, muhim=True
@@ -644,7 +676,7 @@ with t4:
             st.info("Tahrirlash uchun bazada mijoz yo'q.")
 
 # ----------------------------------------------------
-# TAB 5: MARKET (Zagruzkasiz Form + Avto Scrollbar)
+# TAB 5: MARKET (Enter bosilganda saqlanmaydi + Avto Scrollbar)
 # ----------------------------------------------------
 with t_market:
     st.header("🛒 Mini-Market (Savdo va Hisobot)")
@@ -665,7 +697,7 @@ with t_market:
             if not faol_bronlar.empty:
                 mijoz_variantlar += (faol_bronlar['mijoz'] + " (" + faol_bronlar['xona'] + ") - ID: " + faol_bronlar['mijoz_id']).tolist()
 
-            with st.form("market_sotuv_form", clear_on_submit=True):
+            with st.form("market_sotuv_form", clear_on_submit=True, enter_to_submit=False):
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
                     tanlangan_tovar_label = st.selectbox("1. Mahsulotni tanlang:", mahsulotlar['Toliq_Nomi'].tolist())
@@ -741,7 +773,7 @@ with t_market:
             st.info("Hozircha marketda savdo amalga oshirilmagan.")
 
 # ----------------------------------------------------
-# TAB 6: OMBOR (Aqlli Kategoriyalar + Avto Scrollbar + Tahrirlash)
+# TAB 6: OMBOR (Enter bosilganda saqlanmaydi + Avto Scrollbar)
 # ----------------------------------------------------
 with t_ombor:
     st.header("📦 Sklad (Ombor) Boshqaruvi")
@@ -772,7 +804,7 @@ with t_ombor:
             hajm_variantlar = ["Standart (Dona)", "Quti / Pachka", "0.5 L", "1.0 L", "1.0 kg"]
             misol_nom = "Masalan: Kir yuvish kukuni, Salfetka..."
 
-        with st.form("sklad_add_form", clear_on_submit=True):
+        with st.form("sklad_add_form", clear_on_submit=True, enter_to_submit=False):
             c1, c2 = st.columns(2)
             with c1:
                 sub_kat_nomi = st.selectbox(f"2. Mahsulot turi ({kat_nomi}):", turi_variantlar)
@@ -816,7 +848,7 @@ with t_ombor:
             m_edit_id = int(tanlangan_m_str.split(" | ")[0])
             m_row = df_m_edit[df_m_edit['id'] == m_edit_id].iloc[0]
 
-            with st.form("sklad_edit_form"):
+            with st.form("sklad_edit_form", enter_to_submit=False):
                 ce1, ce2 = st.columns(2)
                 with ce1:
                     y_m_nomi = st.text_input("Mahsulot nomi:", value=str(m_row['nomi']))
@@ -883,7 +915,7 @@ with t6:
     st.markdown(f"**Sizning profilingiz:** {xodim_ismi} (`{st.session_state.user_login}`)")
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        with st.form("settings_form"):
+        with st.form("settings_form", enter_to_submit=False):
             yangi_ism = st.text_input("Ism-Sharifingiz:", value=xodim_ismi)
             yangi_parol = st.text_input("Yangi parol:", type="password")
             parol_tasdiq = st.text_input("Yangi parolni tasdiqlang:", type="password")

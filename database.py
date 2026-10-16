@@ -235,14 +235,43 @@ def xona_sigimini_ol(xona_nomi):
         if xona_nomi in tomon: return tomon[xona_nomi][0]
     return 0
 
-def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar):
+def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
+    """
+    Xonada tanlangan sanalar oralig'ida nechta joy bandligini hisoblaydi.
+    Agar xonada 'To'liq band' (Vikup) qilingan bron bo'lsa, xona sig'imi to'liq band deb qaytariladi!
+    """
+    sigim = xona_sigimini_ol(xona_nomi)
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT odam_soni, xona_turi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT odam_soni, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, chiqish_str, kirish_str)
+        )
+    band = 0
+    for r_odam, r_tur in rows:
+        if "To'liq band" in str(r_tur or ''):
+            band += sigim
+        else:
+            band += int(r_odam or 1)
+    return min(sigim, band)
+
+def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False):
+    """
+    Agar toliq_xona=True bo'lsa (masalan 2 kishi 4 kishilik xonani to'liq olsa),
+    hisob-kitob xonaning to'liq sig'imi (4 kishi) bo'yicha hisoblanadi.
+    """
     sigim, bazaviy_narx = XONALAR[tomon][xona]
+    hisob_odam = sigim if toliq_xona else odam_soni
     if tomon == "O'rtadagi":
         kunlik = 300000 if toifa == "Chet el fuqarosi" else 250000
     else:
-        if toifa == "Chet el fuqarosi": kunlik = (bazaviy_narx + 50000) * odam_soni
-        elif toifa == "Talaba (Student)": kunlik = (bazaviy_narx * 0.5) * odam_soni
-        else: kunlik = bazaviy_narx * odam_soni
+        if toifa == "Chet el fuqarosi": kunlik = (bazaviy_narx + 50000) * hisob_odam
+        elif toifa == "Talaba (Student)": kunlik = (bazaviy_narx * 0.5) * hisob_odam
+        else: kunlik = bazaviy_narx * hisob_odam
     jami = kunlik * kunlar
     if kunlar >= 7: jami = jami * 0.9
     return kunlik, jami
@@ -261,12 +290,6 @@ def jurnalga_yozish(obyekt_id, xodim, harakat, tafsilot):
     db.execute("INSERT INTO audit_log (vaqt, mijoz_id, xodim, harakat, tafsilot) VALUES (?,?,?,?,?)", (hozir, obyekt_id, xodim, harakat, tafsilot))
 
 def avto_checkout_tekshir():
-    """
-    Har safar tizim ishlaganda tekshiradi:
-    Agar mijozning chiqish sanasi o'tib ketgan bo'lsa (yoki bugun bo'lib, soat >= 12:00 bo'lsa)
-    va mijozning qarzi bo'lmasa (qoldiq <= 0), uni avtomatik 'Chiqib ketgan' (Arxiv) holatiga o'tkazadi
-    hamda Telegram botga xabar yuboradi.
-    """
     uz_now = toshkent_vaqti()
     bugun_str = uz_now.strftime("%Y-%m-%d")
     soat = uz_now.hour
@@ -299,11 +322,6 @@ def avto_checkout_tekshir():
         )
 
 def avto_kenglik_sozla(df):
-    """
-    Har qanday jadvaldagi (DataFrame) ustunlar ichidagi eng uzun matnga qarab
-    piksel kengligini belgilaydi — shunda Streamlit jadvalida GORIZONTAL SCROLLBAR
-    avtomatik chiqadi va hech qaysi yozuv (Izoh, Audit va h.k.) kesilib qolmaydi!
-    """
     config = {}
     if df is None or df.empty:
         return config
@@ -318,7 +336,7 @@ def avto_kenglik_sozla(df):
         if any(k in col_lower for k in ["izoh", "tafsilot", "batafsil", "ma'lumot", "to'lov turi"]):
             px = max(280, min(max_len * 9 + 40, 1200))
             config[col] = st.column_config.Column(label=str(col), width=px)
-        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt"]):
+        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt", "xona"]):
             px = max(160, min(max_len * 9 + 30, 500))
             config[col] = st.column_config.Column(label=str(col), width=px)
     return config
@@ -369,10 +387,8 @@ def rangla_jadval(row):
     if holat_val == 'Chiqib ketgan':
         return ['background-color: #f1f5f9; color: #64748b'] * len(row)
     elif qoldiq_val > 0:
-        # Qarzdor mijozlar — doim qizil
         return ['background-color: #fef2f2; color: #b91c1c; font-weight: 600'] * len(row)
     elif (chiqish_raw == bugun_str and soat >= 6) or (chiqish_raw != '' and chiqish_raw < bugun_str):
-        # Ertalab 06:00 dan boshlab bugun 12:00 da ketadigan mijozlarni SARG'AYTIRISH
         return ['background-color: #fef08a; color: #854d0e; font-weight: 600'] * len(row)
     else:
         return ['background-color: #f0fdf4; color: #15803d'] * len(row)
