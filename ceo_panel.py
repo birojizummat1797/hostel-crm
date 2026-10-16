@@ -1,11 +1,14 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import db, jurnalga_yozish, haftalik_hisobot_yuklash
 from tg_bot import tg_xabar_yubor
 
+def toshkent_vaqti():
+    return datetime.now(timezone.utc) + timedelta(hours=5)
+
 def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
-    st.header("💸 Xarajatlar (Rashod) va Smena Topshirish")
+    st.header("💸 Xarajatlar va Smena Topshirish")
     tanlov = st.radio("Bo'limni tanlang:", ["➖ Yangi Xarajat kiritish", "🔄 Smenani yopish (Z-Hisobot)", "📋 Xarajatlar va Smenalar tarixi"], horizontal=True)
     st.markdown("---")
 
@@ -23,10 +26,10 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
                 if not izoh.strip():
                     st.error("Iltimos, xarajat sababini (izohni) yozing!")
                 else:
-                    hozir = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
                     db.execute("INSERT INTO xarajatlar (vaqt, sana, kategoriya, summa, tolov_turi, izoh, xodim) VALUES (?,?,?,?,?,?,?)",
-                               (hozir, bugungi_sana, kat, summa, tolov_turi, izoh, xodim_ismi))
-                    jurnalga_yozish("Kassa (Rashod)", xodim_ismi, "Xarajat qilindi", f"{kat}: {summa:,.0f} UZS ({tolov_turi}) - {izoh}")
+                               (hozir, bugungi_sana, kat, summa, tolov_turi, izoh.strip(), xodim_ismi))
+                    jurnalga_yozish("Kassa (Xarajat)", xodim_ismi, "Xarajat qilindi", f"{kat}: {summa:,.0f} UZS ({tolov_turi}) - {izoh.strip()}")
                     st.success("✅ Xarajat bazaga kiritildi va haftalik hisobotga qo'shildi!")
                     st.rerun()
 
@@ -50,34 +53,43 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
         with st.form("smena_form", clear_on_submit=True):
             smena_izoh = st.text_area("Smena bo'yicha izoh (ixtiyoriy):", placeholder="Smena tinch o'tdi, kalitlar va kassa topshirildi...")
             if st.form_submit_button("✅ Smenani yopish va Hisobotga saqlash", type="primary", use_container_width=True):
-                hozir = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
                 db.execute("INSERT INTO smenalar (vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh) VALUES (?,?,?,?,?,?,?)",
-                           (hozir, xodim_ismi, naqd_tushum, karta_tushum, umumiy_xarajat, sof_naqd_kassa, smena_izoh))
-                jurnalga_yozish("Smena (Z-Hisobot)", xodim_ismi, "Smena yopildi", f"Sof naqd: {sof_naqd_kassa:,.0f}, Karta: {karta_tushum:,.0f}, Rashod: {umumiy_xarajat:,.0f}")
+                           (hozir, xodim_ismi, naqd_tushum, karta_tushum, umumiy_xarajat, sof_naqd_kassa, smena_izoh.strip()))
+                jurnalga_yozish("Smena (Z-Hisobot)", xodim_ismi, "Smena yopildi", f"Sof naqd: {sof_naqd_kassa:,.0f}, Karta: {karta_tushum:,.0f}, Xarajat: {umumiy_xarajat:,.0f}")
                 st.success("🎉 Smena muvaffaqiyatli yopildi va bazaga saqlandi!")
                 st.rerun()
 
     else:
-        c_x, c_s = st.columns(2)
-        with c_x:
-            st.markdown("##### 💸 Oxirgi Xarajatlar")
-            df_x = db.read_df("SELECT vaqt, kategoriya, summa, tolov_turi, izoh, xodim FROM xarajatlar ORDER BY id DESC")
-            if not df_x.empty:
-                df_x.columns = ["Vaqt", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
-                df_x["Summa"] = df_x["Summa"].apply(lambda x: f"{int(x):,} UZS")
-                st.dataframe(df_x, use_container_width=True, hide_index=True)
-            else:
-                st.info("Xarajatlar kiritilmagan.")
-        with c_s:
-            st.markdown("##### 🔄 Topshirilgan Smenalar")
-            df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar ORDER BY id DESC")
-            if not df_s.empty:
-                df_s.columns = ["Vaqt", "Xodim", "Naqd", "Karta", "Rashod", "Sof Kassa", "Izoh"]
-                for col in ["Naqd", "Karta", "Rashod", "Sof Kassa"]:
-                    df_s[col] = df_s[col].apply(lambda x: f"{int(x):,}")
-                st.dataframe(df_s, use_container_width=True, hide_index=True)
-            else:
-                st.info("Smenalar hali yopilmagan.")
+        st.markdown("##### 💸 Oxirgi Xarajatlar")
+        df_x = db.read_df("SELECT vaqt, kategoriya, summa, tolov_turi, izoh, xodim FROM xarajatlar ORDER BY id DESC")
+        if not df_x.empty:
+            df_x.columns = ["Vaqt", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
+            df_x["Summa"] = df_x["Summa"].apply(lambda x: f"{int(x):,} UZS")
+            st.dataframe(
+                df_x,
+                use_container_width=True,
+                hide_index=True,
+                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
+            )
+        else:
+            st.info("Xarajatlar kiritilmagan.")
+
+        st.markdown("---")
+        st.markdown("##### 🔄 Topshirilgan Smenalar")
+        df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar ORDER BY id DESC")
+        if not df_s.empty:
+            df_s.columns = ["Vaqt", "Xodim", "Naqd", "Karta", "Xarajat", "Sof Kassa", "Izoh"]
+            for col in ["Naqd", "Karta", "Xarajat", "Sof Kassa"]:
+                df_s[col] = df_s[col].apply(lambda x: f"{int(x):,} UZS")
+            st.dataframe(
+                df_s,
+                use_container_width=True,
+                hide_index=True,
+                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
+            )
+        else:
+            st.info("Smenalar hali yopilmagan.")
 
 
 def render_ceo_panel(xodim_ismi, bugungi_sana):
@@ -96,9 +108,9 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         
         c_d1, c_d2 = st.columns(2)
         with c_d1:
-            bosh_sana = st.date_input("Boshlanish sanasi:", datetime.today() - timedelta(days=7))
+            bosh_sana = st.date_input("Boshlanish sanasi:", toshkent_vaqti().date() - timedelta(days=7))
         with c_d2:
-            tugash_sana = st.date_input("Tugash sanasi:", datetime.today())
+            tugash_sana = st.date_input("Tugash sanasi:", toshkent_vaqti().date())
 
         b_str = bosh_sana.strftime("%Y-%m-%d")
         t_str = tugash_sana.strftime("%Y-%m-%d")
@@ -126,19 +138,27 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         )
 
         st.markdown("---")
-        col_t1, col_t2 = st.columns(2)
-        with col_t1:
-            st.markdown("##### 🛒 Market Savdolari (Tanlangan davr)")
-            if not df_h_savdo.empty:
-                st.dataframe(df_h_savdo[['sana', 'mahsulot_nomi', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']], use_container_width=True, hide_index=True)
-            else:
-                st.info("Bu davrda savdo bo'lmagan.")
-        with col_t2:
-            st.markdown("##### 💸 Mayda-chuyda Xarajatlar (Tanlangan davr)")
-            if not df_h_xarajat.empty:
-                st.dataframe(df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']], use_container_width=True, hide_index=True)
-            else:
-                st.info("Bu davrda xarajat kiritilmagan.")
+        st.markdown("##### 🛒 Market Savdolari (Tanlangan davr)")
+        if not df_h_savdo.empty:
+            st.dataframe(
+                df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']],
+                use_container_width=True,
+                hide_index=True,
+                column_config={"tolov_tafsiloti": st.column_config.TextColumn("To'lov Turi / Izoh", width="large")}
+            )
+        else:
+            st.info("Bu davrda savdo bo'lmagan.")
+
+        st.markdown("##### 💸 Mayda-chuyda Xarajatlar (Tanlangan davr)")
+        if not df_h_xarajat.empty:
+            st.dataframe(
+                df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']],
+                use_container_width=True,
+                hide_index=True,
+                column_config={"izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
+            )
+        else:
+            st.info("Bu davrda xarajat kiritilmagan.")
 
     elif ceo_tanlov == "🚪 Checkout":
         if not df_admin.empty:
@@ -183,7 +203,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
 
             st.markdown("---")
             if st.button("📲 Telegram Bot aloqasini tekshirish (Test xabar)"):
-                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Telegram bot faqat Mijozlar bo'yicha ma'lumotlarni yuborishga sozlandi!", xodim_ismi)
+                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Telegram bot faqat Mijozlar bo'yicha ma'lumotlarni Toshkent vaqti bilan yuborishga sozlandi!", xodim_ismi)
                 if natija:
                     st.success("✅ Telegramingizga xabar yuborildi!")
                 else:
@@ -222,7 +242,17 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                 ]
             df_a_korsatish = df_audit[['vaqt', 'mijoz_id', 'xodim', 'harakat', 'tafsilot']].copy()
             df_a_korsatish.columns = ["Sana va Vaqt", "Obyekt / ID", "Mas'ul Xodim", "Harakat Turi", "Batafsil ma'lumot"]
-            st.dataframe(df_a_korsatish, use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_a_korsatish,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Sana va Vaqt": st.column_config.TextColumn("Sana va Vaqt", width="medium"),
+                    "Mas'ul Xodim": st.column_config.TextColumn("Mas'ul Xodim", width="medium"),
+                    "Harakat Turi": st.column_config.TextColumn("Harakat Turi", width="medium"),
+                    "Batafsil ma'lumot": st.column_config.TextColumn("Batafsil ma'lumot (To'liq)", width="large")
+                }
+            )
         else:
             st.info("Hozircha tizimda o'zgarishlar qayd etilmagan.")
 
@@ -232,29 +262,31 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         if izoh_tanlov == "Mijozlar (Bronlar)":
             df_b = db.read_df("SELECT mijoz_id, mijoz, xona, izoh FROM bronlar WHERE holat!='Chiqib ketgan'")
             if not df_b.empty:
+                t_mijoz = st.selectbox("Mijozni tanlang:", df_b['mijoz_id'] + " - " + df_b['mijoz'] + " (" + df_b['xona'] + ")")
+                m_id_izoh = t_mijoz.split(" - ")[0]
+                joriy_izoh = str(df_b[df_b['mijoz_id'] == m_id_izoh]['izoh'].values[0] or '')
                 with st.form("izoh_mijoz_form"):
-                    t_mijoz = st.selectbox("Mijozni tanlang:", df_b['mijoz_id'] + " - " + df_b['mijoz'] + " (" + df_b['xona'] + ")")
-                    yangi_izoh = st.text_area("Izoh yozing:")
-                    if st.form_submit_button("Izohni Saqlash (Mijoz)"):
-                        m_id_izoh = t_mijoz.split(" - ")[0]
-                        db.execute("UPDATE bronlar SET izoh=? WHERE mijoz_id=?", (yangi_izoh, m_id_izoh))
-                        jurnalga_yozish(m_id_izoh, xodim_ismi, "Maxfiy Izoh yozildi", f"Yangi izoh: {yangi_izoh}")
-                        st.success("Mijozga izoh qo'shildi!")
+                    yangi_izoh = st.text_area("Izoh yozing:", value=joriy_izoh)
+                    if st.form_submit_button("💾 Izohni Saqlash (Mijoz)", type="primary"):
+                        db.execute("UPDATE bronlar SET izoh=? WHERE mijoz_id=?", (yangi_izoh.strip(), m_id_izoh))
+                        jurnalga_yozish(m_id_izoh, xodim_ismi, "Maxfiy Izoh yozildi", f"Yangi izoh: {yangi_izoh.strip()}")
+                        st.success("Mijozga izoh saqlandi!")
                         st.rerun()
             else:
                 st.info("Faol mijozlar yo'q.")
         else:
             df_m = db.read_df("SELECT id, nomi, hajmi, qoldiq, izoh FROM mahsulotlar")
             if not df_m.empty:
+                df_m['korsatkich'] = df_m['nomi'] + " " + df_m['hajmi'] + " (" + df_m['qoldiq'].astype(str) + " ta)"
+                t_mahs = st.selectbox("Mahsulotni tanlang:", df_m['korsatkich'])
+                m_id_m = int(df_m[df_m['korsatkich'] == t_mahs]['id'].values[0])
+                joriy_izoh_m = str(df_m[df_m['id'] == m_id_m]['izoh'].values[0] or '')
                 with st.form("izoh_sklad_form"):
-                    df_m['korsatkich'] = df_m['nomi'] + " " + df_m['hajmi'] + " (" + df_m['qoldiq'].astype(str) + " ta)"
-                    t_mahs = st.selectbox("Mahsulotni tanlang:", df_m['korsatkich'])
-                    yangi_izoh_m = st.text_area("Izoh yozing:")
-                    if st.form_submit_button("Izohni Saqlash (Mahsulot)"):
-                        m_id_m = df_m[df_m['korsatkich'] == t_mahs]['id'].values[0]
-                        db.execute("UPDATE mahsulotlar SET izoh=? WHERE id=?", (yangi_izoh_m, int(m_id_m)))
-                        jurnalga_yozish(f"Sklad (ID:{m_id_m})", xodim_ismi, "Maxfiy Izoh yozildi", f"Yangi izoh: {yangi_izoh_m}")
-                        st.success("Mahsulotga izoh qo'shildi!")
+                    yangi_izoh_m = st.text_area("Izoh yozing:", value=joriy_izoh_m)
+                    if st.form_submit_button("💾 Izohni Saqlash (Mahsulot)", type="primary"):
+                        db.execute("UPDATE mahsulotlar SET izoh=? WHERE id=?", (yangi_izoh_m.strip(), m_id_m))
+                        jurnalga_yozish(f"Sklad (ID:{m_id_m})", xodim_ismi, "Maxfiy Izoh yozildi", f"Yangi izoh: {yangi_izoh_m.strip()}")
+                        st.success("Mahsulotga izoh saqlandi!")
                         st.rerun()
             else:
                 st.info("Skladda mahsulot yo'q.")
