@@ -100,7 +100,7 @@ else:
     t5 = None
 
 # ----------------------------------------------------
-# TAB 1: AQLLI DASHBOARD
+# TAB 1: AQLLI DASHBOARD (Tartibli Kassa va Sklad jadvali)
 # ----------------------------------------------------
 with t1:
     st.header("📈 Moliya va Hostel Analitikasi")
@@ -134,21 +134,63 @@ with t1:
         kirim_gr = df_tolovlar.groupby('tolov_tafsiloti')['summa'].sum().to_dict()
         chiqim_gr = df_xarajat.groupby('tolov_turi')['summa'].sum().to_dict() if not df_xarajat.empty else {}
         
+        standart_kassalar = ["Naqd", "Click", "Humo", "Uzcard", "Terminal"]
         barcha_turlar = sorted(list(set(list(kirim_gr.keys()) + list(chiqim_gr.keys()))))
+        
+        asosiy_list = []
+        boshqa_list = []
+        boshqa_kirim_jami = 0
+        boshqa_chiqim_jami = 0
+        
+        for tur in barcha_turlar:
+            k_s = kirim_gr.get(tur, 0)
+            c_s = chiqim_gr.get(tur, 0)
+            if tur in standart_kassalar:
+                asosiy_list.append((tur, k_s, c_s, k_s - c_s))
+            else:
+                boshqa_kirim_jami += k_s
+                boshqa_chiqim_jami += c_s
+                boshqa_list.append({
+                    "To'lov turi (Izoh)": tur,
+                    "Kirim": f"{int(k_s):,} UZS",
+                    "Xarajat": f"{int(c_s):,} UZS",
+                    "Sof Qoldiq": f"{int(k_s - c_s):,} UZS"
+                })
+        
+        # Barcha "Boshqa (...)" to'lovlarni bitta umumiy kartochkaga jamlash
+        if boshqa_list:
+            asosiy_list.append(("📂 Boshqa to'lovlar (Jami)", boshqa_kirim_jami, boshqa_chiqim_jami, boshqa_kirim_jami - boshqa_chiqim_jami))
+            
         t_cols = st.columns(4)
-        for idx, tur in enumerate(barcha_turlar):
-            kirim_s = kirim_gr.get(tur, 0)
-            chiqim_s = chiqim_gr.get(tur, 0)
-            qoldiq_s = kirim_s - chiqim_s
+        for idx, (nom, k_s, c_s, q_s) in enumerate(asosiy_list):
             with t_cols[idx % 4]:
-                st.info(f"**{tur}**\n\n### {qoldiq_s:,.0f} UZS\n*(Kirim: {kirim_s:,.0f} | Xarajat: {chiqim_s:,.0f})*")
+                st.info(f"**{nom}**\n\n### {q_s:,.0f} UZS\n*(Kirim: {k_s:,.0f} | Xarajat: {c_s:,.0f})*")
+                
+        # Ustiga bosilganda ochiladigan menyu (Boshqa to'lovlar ro'yxati)
+        if boshqa_list:
+            with st.expander(f"📂 «Boshqa» to'lovlarning batafsil ro'yxatini ko'rish ({len(boshqa_list)} xil usul — Jami: {boshqa_kirim_jami - boshqa_chiqim_jami:,.0f} UZS)"):
+                st.dataframe(pd.DataFrame(boshqa_list), use_container_width=True, hide_index=True)
     else:
         st.info("Hali kassa tushumlari mavjud emas.")
 
-    df_mahsulotlar = db.read_df("SELECT * FROM mahsulotlar WHERE qoldiq <= 5")
+    # Tugayotgan mahsulotlarni tartibli jadvalda ko'rsatish
+    df_mahsulotlar = db.read_df("SELECT nomi, hajmi, kategoriya, sub_kategoriya, narxi, qoldiq FROM mahsulotlar WHERE qoldiq <= 5 ORDER BY qoldiq ASC")
     if not df_mahsulotlar.empty:
-        st.error(f"🚨 **DIQQAT: Quyidagi {len(df_mahsulotlar)} ta mahsulot omborda tugayapti!**")
-        st.warning("🛒 " + ", ".join([f"{r['nomi']} ({r['qoldiq']} ta qoldi)" for _, r in df_mahsulotlar.iterrows()]))
+        st.markdown("---")
+        with st.expander(f"🚨 DIQQAT: Omborda {len(df_mahsulotlar)} ta mahsulot tugayapti! (Batafsil jadvalni ko'rish uchun bosing)", expanded=True):
+            df_m_kam = df_mahsulotlar.copy()
+            df_m_kam['hajmi'] = df_m_kam['hajmi'].replace('', '-')
+            df_m_kam['narxi'] = df_m_kam['narxi'].apply(lambda x: f"{int(x):,} UZS")
+            df_m_kam['Holat'] = df_m_kam['qoldiq'].apply(lambda q: "🔴 Tugagan (0 ta)" if q <= 0 else f"🟡 Kam qoldi ({q} ta)")
+            df_m_kam = df_m_kam[['nomi', 'hajmi', 'kategoriya', 'sub_kategoriya', 'narxi', 'qoldiq', 'Holat']]
+            df_m_kam.columns = ["Mahsulot Nomi", "Hajmi / O'lchami", "Kategoriya", "Turi", "Sotuv Narxi", "Qoldiq Soni", "Holat"]
+            
+            def rangla_ombor(row):
+                if row["Qoldiq Soni"] <= 0:
+                    return ['background-color: #fef2f2; color: #b91c1c'] * len(row)
+                return ['background-color: #fffbeb; color: #b45309'] * len(row)
+                
+            st.dataframe(df_m_kam.style.apply(rangla_ombor, axis=1), use_container_width=True, hide_index=True)
 
 # ----------------------------------------------------
 # TAB 2: QABUL VA BRON (Qanotlar ajratilgan + Zagruzkasiz Form!)
@@ -156,14 +198,12 @@ with t1:
 with t2:
     st.subheader("📝 Yangi Mijoz Qabul Qilish / Bron")
     
-    # 1. Qanotni tanlash (xonalar faqat shu qanot bo'yicha chiqishi uchun)
     tomon = st.radio(
         "📍 Avval qanotni (tomonni) tanlang:",
         ["Chap tomon", "O'rtadagi", "O'ng tomon"],
         horizontal=True
     )
     
-    # Tanlangan qanotdagi xonalarni krovat turi va sig'imi bilan chiroyli shakllantirish
     xona_variantlar = []
     for x_nom, (sigim, _) in XONALAR[tomon].items():
         if tomon == "O'rtadagi":
@@ -174,7 +214,6 @@ with t2:
             tavsif = f"{x_nom} ({sigim} kishilik)"
         xona_variantlar.append(tavsif)
 
-    # 2. Asosiy ma'lumotlar formasi (ichida hech qanday zagruzka bo'lmaydi)
     with st.form("qabul_form", clear_on_submit=True):
         bron_turi = st.radio("📌 Ro'yxatdan o'tish turi:", ["Hozir qabul qilish (Kirish)", "Oldindan band qilish (Bron)"], horizontal=True)
         st.markdown("---")
@@ -352,7 +391,6 @@ with t4:
         df['qoldiq'] = df['qoldiq'].fillna(0)
         df['izoh'] = df['izoh'].fillna('')
         
-        # Agar eski mijozlarda 'sana' ustunida soat bo'lmasa, kirish_sanasi bilan to'ldiramiz
         df['kirish_vaqti_korsat'] = df.apply(
             lambda r: str(r['sana']) if '(' in str(r.get('sana', '')) else f"{r.get('kirish_sanasi', '')} (12:00)",
             axis=1
@@ -549,6 +587,7 @@ with t_market:
                 with col_m2:
                     kim_olayapti = st.selectbox("3. Xaridor (Darhol to'lov yoki Xona qarziga):", mijoz_variantlar)
                     m_tafsiloti = st.selectbox("4. To'lov usuli (Darhol to'lov bo'lsa):", ["Naqd", "Click", "Uzcard", "Humo", "Terminal", "Boshqa"])
+                    m_boshqa_izoh = st.text_input("Agar «Boshqa» bo'lsa, nomini yozing (masalan: Payme, Alif):", placeholder="Ixtiyoriy...")
                 
                 if st.form_submit_button("🛒 SOTISHNI TASDIQLASH", type="primary", use_container_width=True):
                     tanlangan_qator = mahsulotlar[mahsulotlar['Toliq_Nomi'] == tanlangan_tovar_label].iloc[0]
@@ -562,6 +601,9 @@ with t_market:
                         tovar_tannarxi = float(tanlangan_qator.get('tannarx', 0) or 0)
                         jami_sum = miqdor * tovar_narxi
                         sof_foyda_sum = miqdor * (tovar_narxi - tovar_tannarxi)
+
+                        if m_tafsiloti == "Boshqa" and m_boshqa_izoh.strip():
+                            m_tafsiloti = f"Boshqa ({m_boshqa_izoh.strip()})"
 
                         if kim_olayapti == "💵 Darhol To'lov (Umumiy xaridor)":
                             xaridor_nomi = "Umumiy xaridor"
@@ -608,7 +650,7 @@ with t_market:
             st.info("Hozircha marketda savdo amalga oshirilmagan.")
 
 # ----------------------------------------------------
-# TAB 6: OMBOR (Zagruzkasiz Form)
+# TAB 6: OMBOR (Aqlli Kategoriyalar va O'lchamlar + Zagruzkasiz Form)
 # ----------------------------------------------------
 with t_ombor:
     st.header("📦 Sklad (Ombor) Boshqaruvi")
@@ -616,13 +658,37 @@ with t_ombor:
     st.markdown("---")
     
     if ombor_tanlov == "➕ Yangi tovar kiritish":
+        # 1. Kategoriyani formadan tashqarida tanlaymiz (Turi va O'lchamlari mos ravishda o'zgarishi uchun)
+        kat_nomi = st.radio(
+            "📂 1. Avval mahsulot kategoriyasini tanlang:",
+            ["Ichimliklar", "Gigiyena vositalari", "Oziq-ovqat", "Xo'jalik mollari", "Boshqa"],
+            horizontal=True
+        )
+        
+        if kat_nomi == "Ichimliklar":
+            turi_variantlar = ["Gazli shirin suv (Cola, Fanta...)", "Energetik / Bankali ichimlik", "Mineral suv (Gazli / Gazsiz)", "Sharbat / Sok / Muzdek choy", "Boshqa ichimlik"]
+            hajm_variantlar = ["0.25 L", "0.5 L", "1.0 L", "1.5 L", "2.0 L", "2.5 L", "Standart (Hajmsiz)"]
+            misol_nom = "Masalan: Coca-Cola, Fanta, Bonaqua..."
+        elif kat_nomi == "Gigiyena vositalari":
+            turi_variantlar = ["Bir martalik (1 martalik)", "Komplekt (To'plam)", "Alohida (Dona)", "Suyuq / Gel / Shampun", "Boshqa gigiyena"]
+            hajm_variantlar = ["1 martalik", "Standart (Dona)", "To'plam (Komplekt)", "Kichik", "Katta"]
+            misol_nom = "Masalan: Shampun, Tish pastasi, Britva, Sovun..."
+        elif kat_nomi == "Oziq-ovqat":
+            turi_variantlar = ["Tez tayyorlanadigan (Rollton va h.k.)", "Shirinlik / Snek / Pechenye", "Non va non mahsulotlari", "Choy / Qahva", "Standart"]
+            hajm_variantlar = ["1 porsiya / Dona", "Pachka / Quti", "Standart (Hajmsiz)", "0.5 kg", "1.0 kg"]
+            misol_nom = "Masalan: Rollton, Alpen Gold, Qora choy..."
+        else:
+            turi_variantlar = ["Tozalik vositasi", "Inventar / Buyum", "Standart", "Boshqa"]
+            hajm_variantlar = ["Standart (Dona)", "Quti / Pachka", "0.5 L", "1.0 L", "1.0 kg"]
+            misol_nom = "Masalan: Kir yuvish kukuni, Salfetka..."
+
         with st.form("sklad_add_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
-                kat_nomi = st.selectbox("1. Kategoriya:", ["Ichimliklar", "Gigiyena vositalari", "Oziq-ovqat", "Xo'jalik mollari", "Boshqa"])
-                sub_kat_nomi = st.selectbox("2. Turi:", ["Gazli ichimlik", "Gazsiz suv / Sok", "Komplekt", "Alohida / Dona", "Standart"])
-                tov_nomi = st.text_input("3. Mahsulot nomi (masalan, Coca-Cola):")
-                hajmi = st.text_input("4. Hajmi / O'lchami (masalan: 0.5 L, 1.5 L yoki bo'sh qoldiring):")
+                sub_kat_nomi = st.selectbox(f"2. Mahsulot turi ({kat_nomi}):", turi_variantlar)
+                tov_nomi = st.text_input("3. Mahsulot nomi:", placeholder=misol_nom)
+                hajm_tanlov = st.selectbox("4. Hajmi / O'lchami:", hajm_variantlar)
+                maxsus_hajm = st.text_input("✏️ Yoki boshqa o'lcham bo'lsa, shu yerga yozing (ixtiyoriy):", placeholder="Masalan: 0.33 L, 450 ml...")
             
             with c2:
                 tov_tannarx = st.number_input("5. Olib kelish narxi / Tannarx (UZS):", min_value=0, value=5000, step=500)
@@ -634,15 +700,21 @@ with t_ombor:
                     st.error("Mahsulot nomini kiriting!")
                 else:
                     t_nom = tov_nomi.strip()
-                    t_hajm = hajmi.strip()
+                    if maxsus_hajm.strip():
+                        t_hajm = maxsus_hajm.strip()
+                    elif hajm_tanlov in ["Standart (Hajmsiz)", "Standart (Dona)"]:
+                        t_hajm = ""
+                    else:
+                        t_hajm = hajm_tanlov
+
                     if db.fetchone("SELECT qoldiq FROM mahsulotlar WHERE nomi=? AND hajmi=?", (t_nom, t_hajm)):
                         db.execute("UPDATE mahsulotlar SET qoldiq = qoldiq + ?, tannarx = ?, narxi = ? WHERE nomi = ? AND hajmi = ?", (tov_soni, tov_tannarx, tov_narxi, t_nom, t_hajm))
-                        st.success(f"{t_nom} qoldig'iga +{tov_soni} ta qo'shildi!")
+                        st.success(f"✅ {t_nom} ({t_hajm if t_hajm else 'Standart'}) qoldig'iga +{tov_soni} ta qo'shildi!")
                         jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Qoldiq to'ldirildi", f"{t_nom} ({t_hajm}) ga {tov_soni} ta qo'shildi. Sotuv narxi: {tov_narxi:,.0f} UZS")
                     else:
                         db.execute("INSERT INTO mahsulotlar (nomi, kategoriya, sub_kategoriya, hajmi, tannarx, narxi, qoldiq, izoh) VALUES (?,?,?,?,?,?,?,?)", 
                                   (t_nom, kat_nomi, sub_kat_nomi, t_hajm, tov_tannarx, tov_narxi, tov_soni, ""))
-                        st.success(f"Yangi {t_nom} omborga qo'shildi!")
+                        st.success(f"✅ Yangi {t_nom} ({t_hajm if t_hajm else 'Standart'}) omborga qo'shildi!")
                         jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Yangi tovar keldi", f"{t_nom} ({t_hajm}) {tov_soni} ta kiritildi. Sotuv narxi: {tov_narxi:,.0f} UZS")
                     st.rerun()
                 
