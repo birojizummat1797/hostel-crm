@@ -2,9 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-
-def toshkent_vaqti():
-    return datetime.now(timezone.utc) + timedelta(hours=5)
 import io
 import os
 
@@ -13,6 +10,9 @@ try:
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
+
+def toshkent_vaqti():
+    return datetime.now(timezone.utc) + timedelta(hours=5)
 
 # ==========================================
 # 1. BAZA ARXITEKTURASI (CLOUD + LOKAL)
@@ -218,7 +218,13 @@ BARCHA_XONALAR_ROYXATI = []
 XONA_TOMON_MAP = {}
 for t_nomi, x_dict in XONALAR.items():
     for x_nomi, x_info in x_dict.items():
-        BARCHA_XONALAR_ROYXATI.append(f"{t_nomi} | {x_nomi} ({x_info[0]} kishilik)")
+        if t_nomi == "O'rtadagi":
+            tavsif = f"{t_nomi} | {x_nomi} (2 kishilik - Dvuxspalniy)"
+        elif x_info[0] == 2:
+            tavsif = f"{t_nomi} | {x_nomi} (2 kishilik - 2 alohida krovat)"
+        else:
+            tavsif = f"{t_nomi} | {x_nomi} ({x_info[0]} kishilik)"
+        BARCHA_XONALAR_ROYXATI.append(tavsif)
         XONA_TOMON_MAP[x_nomi] = t_nomi
 
 MUDDATLAR = {"Kunlik": 1, "1 hafta (7 kun)": 7, "10 kun": 10, "15 kun": 15, "1 oylik (30 kun)": 30}
@@ -252,7 +258,7 @@ def id_yaratish(jinsi, kirish_sanasi_obj, toifa):
 def jurnalga_yozish(obyekt_id, xodim, harakat, tafsilot):
     hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
     db.execute("INSERT INTO audit_log (vaqt, mijoz_id, xodim, harakat, tafsilot) VALUES (?,?,?,?,?)", (hozir, obyekt_id, xodim, harakat, tafsilot))
-    
+
 def barcha_bazani_yuklash():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -280,11 +286,15 @@ def chiroyli_kartochka(icon, title, value, bg_color):
 
 def rangla_jadval(row):
     holat_val = str(row.get('Holat', row.get('holat', '')))
-    q_str = str(row.get('Qoldiq', row.get('qoldiq', '0'))).replace(' UZS', '').replace(',', '').strip()
-    try:
-        qoldiq_val = float(q_str)
-    except Exception:
+    q_raw = str(row.get('Qoldiq', row.get('qoldiq', '0')))
+    if 'Avans' in q_raw:
         qoldiq_val = 0
+    else:
+        q_str = q_raw.split('UZS')[0].replace(',', '').strip()
+        try:
+            qoldiq_val = float(q_str)
+        except Exception:
+            qoldiq_val = 0
         
     if holat_val == 'Chiqib ketgan':
         return ['background-color: #f1f5f9; color: #94a3b8'] * len(row)

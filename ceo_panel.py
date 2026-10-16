@@ -79,8 +79,8 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
         st.markdown("##### 🔄 Topshirilgan Smenalar")
         df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar ORDER BY id DESC")
         if not df_s.empty:
-            df_s.columns = ["Vaqt", "Xodim", "Naqd", "Karta", "Xarajat", "Sof Kassa", "Izoh"]
-            for col in ["Naqd", "Karta", "Xarajat", "Sof Kassa"]:
+            df_s.columns = ["Vaqt", "Xodim", "Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa", "Izoh"]
+            for col in ["Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa"]:
                 df_s[col] = df_s[col].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(
                 df_s,
@@ -140,22 +140,28 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         st.markdown("---")
         st.markdown("##### 🛒 Market Savdolari (Tanlangan davr)")
         if not df_h_savdo.empty:
+            df_hs_view = df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
+            df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Xodim"]
+            df_hs_view["Jami Summa"] = df_hs_view["Jami Summa"].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(
-                df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']],
+                df_hs_view,
                 use_container_width=True,
                 hide_index=True,
-                column_config={"tolov_tafsiloti": st.column_config.TextColumn("To'lov Turi / Izoh", width="large")}
+                column_config={"To'lov Turi": st.column_config.TextColumn("To'lov Turi", width="large")}
             )
         else:
             st.info("Bu davrda savdo bo'lmagan.")
 
         st.markdown("##### 💸 Mayda-chuyda Xarajatlar (Tanlangan davr)")
         if not df_h_xarajat.empty:
+            df_hx_view = df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']].copy()
+            df_hx_view.columns = ["Sana", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
+            df_hx_view["Summa"] = df_hx_view["Summa"].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(
-                df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']],
+                df_hx_view,
                 use_container_width=True,
                 hide_index=True,
-                column_config={"izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
+                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
             )
         else:
             st.info("Bu davrda xarajat kiritilmagan.")
@@ -300,9 +306,10 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                     och_id = del_id.split(" - ")[0]
                     och_ism = del_id.split(" - ")[1]
                     db.execute("DELETE FROM bronlar WHERE mijoz_id = ?", (och_id,))
-                    jurnalga_yozish(och_id, xodim_ismi, "O'chirish (Xavfli)", f"Mijoz ({och_ism}) bazadan o'chirildi")
+                    db.execute("DELETE FROM tolovlar_tarixi WHERE mijoz_id = ?", (och_id,))
+                    jurnalga_yozish(och_id, xodim_ismi, "O'chirish (Xavfli)", f"Mijoz ({och_ism}) va uning to'lovlari bazadan o'chirildi")
                     tg_xabar_yubor("Mijoz bazadan o'chirildi!", f"🆔 <b>ID:</b> {och_id}\n👤 <b>Mijoz:</b> {och_ism}", xodim_ismi, muhim=True)
-                    st.success("O'chirildi!")
+                    st.success("Mijoz va uning to'lov tarixi o'chirildi!")
                     st.rerun()
         else:
             st.info("Bazada ma'lumot yo'q.")
