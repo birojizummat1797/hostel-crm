@@ -4,12 +4,13 @@ from datetime import datetime, timedelta, timezone
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
     xona_sigimini_ol, narx_hisobla, id_yaratish,
-    jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval, toshkent_vaqti
+    jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval,
+    toshkent_vaqti, avto_checkout_tekshir, avto_kenglik_sozla
 )
 from tg_bot import tg_xabar_yubor
 from ceo_panel import render_xarajatlar_va_smena, render_ceo_panel
 
-st.set_page_config(page_title="Yangi Sergeli Hostel CRM", layout="wide")
+st.set_page_config(page_title="Y.S.H. ERP | Yangi Sergeli Hostel", layout="wide")
 st.markdown("""
 <style>
 div[data-testid="metric-container"] {
@@ -44,13 +45,13 @@ if not st.session_state.logged_in and "user" in st.query_params:
 # 1. LOGIN OYNASI (ZAGRUZKASIZ FORM)
 # ==========================================
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center; color: #2E3B55; margin-top: 50px;'>🏨 YSH CRM | ERP Tizimi</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #2E3B55; margin-top: 50px;'>🏨 Yangi Sergeli Hostel | Y.S.H. ERP</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.form("login_form"):
             login_input = st.text_input("Login")
             parol_input = st.text_input("Parol", type="password")
-            submit_login = st.form_submit_button("Kirish", use_container_width=True, type="primary")
+            submit_login = st.form_submit_button("Tizimga kirish", use_container_width=True, type="primary")
             if submit_login:
                 user = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=? AND parol=?", (login_input.strip(), parol_input.strip()))
                 if user:
@@ -66,13 +67,20 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==========================================
+# HAR SAFAR AVTO-CHECKOUTNI TEKSHIRISH (12:00)
+# ==========================================
+avto_checkout_tekshir()
+
+# ==========================================
 # 2. SIDEBAR VA NAVIGATSIYA
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
 bugungi_sana = hozirgi_uz_vaqt.strftime("%Y-%m-%d")
+hozirgi_soat = hozirgi_uz_vaqt.hour
 
-st.sidebar.title("🏨 YSH ERP")
+st.sidebar.title("🏨 Y.S.H. ERP")
+st.sidebar.caption("Yangi Sergeli Hostel boshqaruv tizimi")
 st.sidebar.success(f"👤 **{xodim_ismi}**\n\nRol: {st.session_state.role.upper()}")
 
 if IS_POSTGRES:
@@ -83,7 +91,7 @@ else:
 st.sidebar.download_button(
     label="💾 Barcha bazani yuklash (Excel)",
     data=barcha_bazani_yuklash(),
-    file_name=f"YSH_CRM_Full_Backup_{bugungi_sana}.xlsx",
+    file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True
 )
@@ -96,7 +104,7 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     st.query_params.clear()
     st.rerun()
 
-st.title("🏨 Yangi Sergeli Hostel CRM")
+st.title("🏨 Yangi Sergeli Hostel | Y.S.H. ERP")
 
 if st.session_state.role == "ceo":
     tabs = st.tabs(["📈 Dashboard", "📝 Qabul", "🔲 Shaxmatka", "💼 Mijozlar", "🛒 Market", "📦 Sklad", "💸 Xarajat va Smena", "👑 CEO Panel", "⚙️ Sozlamalar"])
@@ -176,13 +184,9 @@ with t1:
                 st.info(f"**{nom}**\n\n### {q_s:,.0f} UZS\n*(Kirim: {k_s:,.0f} | Xarajat: {c_s:,.0f})*")
                 
         if boshqa_list:
+            df_boshqa = pd.DataFrame(boshqa_list)
             with st.expander(f"📂 «Boshqa» to'lovlarning batafsil ro'yxatini ko'rish ({len(boshqa_list)} xil usul — Jami: {boshqa_kirim_jami - boshqa_chiqim_jami:,.0f} UZS)"):
-                st.dataframe(
-                    pd.DataFrame(boshqa_list),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={"To'lov turi (Izoh)": st.column_config.TextColumn("To'lov turi (Izoh)", width="large")}
-                )
+                st.dataframe(df_boshqa, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_boshqa))
     else:
         st.info("Hali kassa tushumlari mavjud emas.")
 
@@ -207,7 +211,7 @@ with t1:
                 df_m_kam.style.apply(rangla_ombor, axis=1),
                 use_container_width=True,
                 hide_index=True,
-                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
+                column_config=avto_kenglik_sozla(df_m_kam)
             )
 
 # ----------------------------------------------------
@@ -359,7 +363,7 @@ with t3:
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        column_config={"Xona": st.column_config.TextColumn("Xona", width="medium")}
+        column_config={"Xona": st.column_config.Column("Xona", width=150)}
     )
     st.markdown("---")
     st.subheader("🔍 Xona ichidagi aniq holat")
@@ -402,10 +406,11 @@ with t3:
         st.info("👆 Ma'lumotni ko'rish uchun yuqoridagi jadvaldan biror qatorni ustiga bosing.")
 
 # ----------------------------------------------------
-# TAB 4: FRONT-OFIS (Gorizontal Scrollbar + To'liq Izohlar + Tahrirlash)
+# TAB 4: FRONT-OFIS (Sarg'aytirish + Avto-Checkout + Scrollbar + Tahrirlash)
 # ----------------------------------------------------
 with t4:
     st.header("💼 Mijozlar va Boshqaruv (Front-Ofis)")
+    st.caption("🟢 Yashil — To'langan faol mijoz | 🟡 Sariq — Bugun 12:00 da ketish vaqti kelgan (12:00 da avtomatik arxivlanadi) | 🔴 Qizil — Qarzdor")
     df = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
     
     qidiruv = st.text_input("🔍 Mijoz F.I.O, ID, Xona yoki Izoh bo'yicha tezkor qidiruv:", placeholder="Ism, ID, xona yoki izohdagi so'zni yozing...")
@@ -437,43 +442,45 @@ with t4:
         bron_df = pd.DataFrame()
         barcha_faol_va_bron = pd.DataFrame()
 
-    mijoz_col_config = {
-        "ID": st.column_config.TextColumn("ID", width="small"),
-        "Mijoz": st.column_config.TextColumn("Mijoz", width="medium"),
-        "Xona": st.column_config.TextColumn("Xona", width="small"),
-        "Odam": st.column_config.NumberColumn("Odam", width="small"),
-        "Kun": st.column_config.NumberColumn("Kun", width="small"),
-        "Jami Summa": st.column_config.TextColumn("Jami Summa", width="medium"),
-        "To'langan": st.column_config.TextColumn("To'langan", width="medium"),
-        "Qoldiq": st.column_config.TextColumn("Qoldiq", width="medium"),
-        "Kirish (Sana va Soat)": st.column_config.TextColumn("Kirish (Sana va Soat)", width="medium"),
-        "Chiqish": st.column_config.TextColumn("Chiqish", width="medium"),
-        "Holat": st.column_config.TextColumn("Holat", width="small"),
-        "Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")
-    }
-
     def format_qoldiq_ustun(x):
         val = int(x)
         if val < 0:
             return f"0 UZS (Avans: +{abs(val):,})"
         return f"{val:,} UZS"
 
+    def aqlli_holat_matni(r):
+        if r['holat'] == 'Chiqib ketgan':
+            return 'Chiqib ketgan'
+        if r['qoldiq'] > 0:
+            if r['chiqish_sanasi'] <= bugungi_sana and hozirgi_soat >= 6:
+                return '🚨 Vaqti tugagan (QARZ!)'
+            return 'Qarzdorlik'
+        if r['chiqish_sanasi'] == bugungi_sana and hozirgi_soat >= 6:
+            return '⏳ Ketish vaqti (12:00)'
+        return "To'langan"
+
     if not bron_df.empty:
         st.subheader("📅 Oldindan Bron qilinganlar")
         bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'izoh']].copy()
-        bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh"]
+        bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh (To'liq)"]
         for col in ["Jami Summa", "To'langan"]: bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         bron_korsatish["Qoldiq"] = bron_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
-        st.dataframe(bron_korsatish, use_container_width=True, hide_index=True, column_config=mijoz_col_config)
+        st.dataframe(bron_korsatish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(bron_korsatish))
 
     st.subheader("🟢 Hozirgi (Faol) Mijozlar")
     if not faol_df.empty:
         faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
+        faol_korsatish['holat'] = faol_df.apply(aqlli_holat_matni, axis=1)
         faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
-        faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh"]
+        faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh (To'liq)"]
         for col in ["Jami Summa", "To'langan"]: faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
         faol_korsatish["Qoldiq"] = faol_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
-        st.dataframe(faol_korsatish.style.apply(rangla_jadval, axis=1), use_container_width=True, hide_index=True, column_config=mijoz_col_config)
+        st.dataframe(
+            faol_korsatish.style.apply(rangla_jadval, axis=1),
+            use_container_width=True,
+            hide_index=True,
+            column_config=avto_kenglik_sozla(faol_korsatish)
+        )
     else:
         st.info("📭 Hozircha hostelda faol mijozlar yo'q. Yangi mehmon kiritish uchun **📝 Qabul** bo'limiga o'ting.")
     
@@ -615,7 +622,6 @@ with t4:
                         WHERE mijoz_id=?
                     """, (y_ism.strip(), y_tomon, y_xona, y_xona_turi, y_odam, y_sana_vaqt_toliq, y_kirish_str, y_chiqish_str, y_kunlar, y_faktik, y_faktik, y_tolagan, y_qoldiq, y_holat, y_izoh.strip(), t_id))
                     
-                    # Agar to'langan summa o'zgargan bo'lsa, Kassa (tolovlar_tarixi) bilan sinxronlash
                     farq_tolov = y_tolagan - eski_tolagan
                     if farq_tolov != 0:
                         t_taf_eski = str(t_row.get('tolov_tafsiloti', 'Naqd') or 'Naqd')
@@ -638,7 +644,7 @@ with t4:
             st.info("Tahrirlash uchun bazada mijoz yo'q.")
 
 # ----------------------------------------------------
-# TAB 5: MARKET (Zagruzkasiz Form)
+# TAB 5: MARKET (Zagruzkasiz Form + Avto Scrollbar)
 # ----------------------------------------------------
 with t_market:
     st.header("🛒 Mini-Market (Savdo va Hisobot)")
@@ -729,16 +735,13 @@ with t_market:
                 df_savdo_korsatish,
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "Mahsulot": st.column_config.TextColumn("Mahsulot", width="medium"),
-                    "To'lov Turi": st.column_config.TextColumn("To'lov Turi", width="large")
-                }
+                column_config=avto_kenglik_sozla(df_savdo_korsatish)
             )
         else:
             st.info("Hozircha marketda savdo amalga oshirilmagan.")
 
 # ----------------------------------------------------
-# TAB 6: OMBOR (Aqlli Kategoriyalar + Tahrirlash va O'chirish)
+# TAB 6: OMBOR (Aqlli Kategoriyalar + Avto Scrollbar + Tahrirlash)
 # ----------------------------------------------------
 with t_ombor:
     st.header("📦 Sklad (Ombor) Boshqaruvi")
@@ -847,18 +850,14 @@ with t_ombor:
         if not df_mahsulot.empty: 
             df_mahsulot['izoh'] = df_mahsulot['izoh'].fillna('')
             df_mahsulot['tannarx'] = df_mahsulot['tannarx'].fillna(0)
-            df_mahsulot.columns = ["Nomi", "Hajmi", "Kategoriya", "Sub-kat", "Tannarxi", "Sotuv Narxi", "Qoldiq", "Izoh"]
+            df_mahsulot.columns = ["Nomi", "Hajmi", "Kategoriya", "Sub-kat", "Tannarxi", "Sotuv Narxi", "Qoldiq", "Izoh (To'liq)"]
             df_mahsulot['Tannarxi'] = df_mahsulot['Tannarxi'].apply(lambda x: f"{int(x):,} UZS")
             df_mahsulot['Sotuv Narxi'] = df_mahsulot['Sotuv Narxi'].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(
                 df_mahsulot,
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "Nomi": st.column_config.TextColumn("Nomi", width="medium"),
-                    "Sub-kat": st.column_config.TextColumn("Sub-kat", width="medium"),
-                    "Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")
-                }
+                column_config=avto_kenglik_sozla(df_mahsulot)
             )
         else:
             st.info("Sklad bo'sh.")

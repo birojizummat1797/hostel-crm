@@ -24,17 +24,16 @@ def tg_xabar_yubor(sarlavha, tafsilotlar, xodim, muhim=False):
     if not token or not chat_id:
         return False
 
-    # Aniq Toshkent vaqti (UTC + 5 soat)
     uz_vaqti = datetime.now(timezone.utc) + timedelta(hours=5)
     hozir = uz_vaqti.strftime("%d.%m.%Y | %H:%M")
     belgi = "🚨" if muhim else "🔔"
     
     matn = (
-        f"{belgi} <b>YSH CRM: {sarlavha}</b>\n"
+        f"{belgi} <b>Y.S.H. ERP: {sarlavha}</b>\n"
         f"━━━━━━━━━━━━━━━\n"
         f"{tafsilotlar}\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"👤 <b>Xodim:</b> {xodim}\n"
+        f"👤 <b>Mas'ul:</b> {xodim}\n"
         f"🕒 <b>Vaqt:</b> {hozir}"
     )
 

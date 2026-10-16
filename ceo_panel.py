@@ -1,11 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from database import db, jurnalga_yozish, haftalik_hisobot_yuklash
+from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti
 from tg_bot import tg_xabar_yubor
-
-def toshkent_vaqti():
-    return datetime.now(timezone.utc) + timedelta(hours=5)
 
 def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
     st.header("💸 Xarajatlar va Smena Topshirish")
@@ -66,12 +63,7 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
         if not df_x.empty:
             df_x.columns = ["Vaqt", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
             df_x["Summa"] = df_x["Summa"].apply(lambda x: f"{int(x):,} UZS")
-            st.dataframe(
-                df_x,
-                use_container_width=True,
-                hide_index=True,
-                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
-            )
+            st.dataframe(df_x, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_x))
         else:
             st.info("Xarajatlar kiritilmagan.")
 
@@ -82,21 +74,16 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
             df_s.columns = ["Vaqt", "Xodim", "Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa", "Izoh"]
             for col in ["Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa"]:
                 df_s[col] = df_s[col].apply(lambda x: f"{int(x):,} UZS")
-            st.dataframe(
-                df_s,
-                use_container_width=True,
-                hide_index=True,
-                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
-            )
+            st.dataframe(df_s, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_s))
         else:
             st.info("Smenalar hali yopilmagan.")
 
 
 def render_ceo_panel(xodim_ismi, bugungi_sana):
-    st.header("👑 CEO Boshqaruv Paneli")
+    st.header("👑 CEO Boshqaruv Paneli (Y.S.H. ERP)")
     ceo_tanlov = st.radio(
         "Kerakli bo'limni tanlang:",
-        ["📊 Haftalik Hisobot (Sklad va Xarajat)", "🚪 Checkout", "👥 Xodimlar (Adminlar)", "🕵️ Batafsil Audit", "📝 Maxsus Izohlar", "🗑️ O'chirish"],
+        ["📊 Haftalik Hisobot (Sklad va Xarajat)", "🚪 Checkout (Va Arxiv)", "👥 Xodimlar (Adminlar)", "🕵️ Batafsil Audit", "📝 Maxsus Izohlar", "🗑️ O'chirish"],
         horizontal=True
     )
     st.markdown("---")
@@ -131,7 +118,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         st.download_button(
             label=f"📥 {b_str} dan {t_str} gacha To'liq Hisobotni Yuklab Olish (Excel)",
             data=haftalik_hisobot_yuklash(b_str, t_str),
-            file_name=f"YSH_Haftalik_Hisobot_{b_str}_{t_str}.xlsx",
+            file_name=f"Y.S.H._Haftalik_Hisobot_{b_str}_{t_str}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
             use_container_width=True
@@ -143,12 +130,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
             df_hs_view = df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
             df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Xodim"]
             df_hs_view["Jami Summa"] = df_hs_view["Jami Summa"].apply(lambda x: f"{int(x):,} UZS")
-            st.dataframe(
-                df_hs_view,
-                use_container_width=True,
-                hide_index=True,
-                column_config={"To'lov Turi": st.column_config.TextColumn("To'lov Turi", width="large")}
-            )
+            st.dataframe(df_hs_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_hs_view))
         else:
             st.info("Bu davrda savdo bo'lmagan.")
 
@@ -157,22 +139,18 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
             df_hx_view = df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']].copy()
             df_hx_view.columns = ["Sana", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
             df_hx_view["Summa"] = df_hx_view["Summa"].apply(lambda x: f"{int(x):,} UZS")
-            st.dataframe(
-                df_hx_view,
-                use_container_width=True,
-                hide_index=True,
-                column_config={"Izoh": st.column_config.TextColumn("Izoh (To'liq)", width="large")}
-            )
+            st.dataframe(df_hx_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_hx_view))
         else:
             st.info("Bu davrda xarajat kiritilmagan.")
 
-    elif ceo_tanlov == "🚪 Checkout":
+    elif ceo_tanlov == "🚪 Checkout (Va Arxiv)":
         if not df_admin.empty:
             faollar = df_admin[df_admin['holat'] != 'Chiqib ketgan']
+            arxivdagilar = df_admin[df_admin['holat'] == 'Chiqib ketgan']
             if not faollar.empty:
                 with st.form("checkout_form"):
                     korsatkich = faollar['mijoz_id'] + " - " + faollar['mijoz'] + " (" + faollar['xona'] + " | Chiqish: " + faollar['chiqish_sanasi'] + " 12:00)"
-                    chiq_id_toliq = st.selectbox("Xonani bo'shatadigan mijoz:", korsatkich)
+                    chiq_id_toliq = st.selectbox("Muddatidan oldin yoki hozir xonani bo'shatadigan mijoz:", korsatkich)
                     if st.form_submit_button("🚪 Mijozni chiqarish va Arxivlash", type="primary"):
                         c_id = chiq_id_toliq.split(" - ")[0]
                         mijoz_qator = faollar[faollar['mijoz_id'] == c_id].iloc[0]
@@ -186,6 +164,16 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                             st.rerun()
             else:
                 st.info("Hozircha faol mijozlar yo'q.")
+
+            st.markdown("---")
+            st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar ({len(arxivdagilar)} ta)")
+            if not arxivdagilar.empty:
+                arx_view = arxivdagilar[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'sana', 'chiqish_sanasi', 'izoh']].copy()
+                arx_view.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Izoh"]
+                for col in ["Jami Summa", "To'langan"]: arx_view[col] = arx_view[col].apply(lambda x: f"{int(x or 0):,} UZS")
+                st.dataframe(arx_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(arx_view))
+            else:
+                st.info("Arxiv bo'sh.")
         else:
             st.info("Bazada ma'lumot yo'q.")
 
@@ -195,7 +183,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         with c_u1:
             df_users = db.read_df("SELECT login, ism, role, parol FROM xodimlar")
             df_users.columns = ["Login", "Ism-Sharif (Auditda ko'rinadi)", "Rol", "Parol"]
-            st.dataframe(df_users, use_container_width=True, hide_index=True)
+            st.dataframe(df_users, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_users))
 
             och_royxat = [l for l in df_users["Login"].tolist() if l != 'ceo']
             if och_royxat:
@@ -209,7 +197,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
 
             st.markdown("---")
             if st.button("📲 Telegram Bot aloqasini tekshirish (Test xabar)"):
-                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Telegram bot faqat Mijozlar bo'yicha ma'lumotlarni Toshkent vaqti bilan yuborishga sozlandi!", xodim_ismi)
+                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Y.S.H. ERP: Telegram bot faqat Mijozlar va Avto-Checkout xabarlarini yuborishga sozlandi!", xodim_ismi)
                 if natija:
                     st.success("✅ Telegramingizga xabar yuborildi!")
                 else:
@@ -247,17 +235,12 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                     df_audit['tafsilot'].str.contains(qidir_audit, case=False, na=False)
                 ]
             df_a_korsatish = df_audit[['vaqt', 'mijoz_id', 'xodim', 'harakat', 'tafsilot']].copy()
-            df_a_korsatish.columns = ["Sana va Vaqt", "Obyekt / ID", "Mas'ul Xodim", "Harakat Turi", "Batafsil ma'lumot"]
+            df_a_korsatish.columns = ["Sana va Vaqt", "Obyekt / ID", "Mas'ul Xodim", "Harakat Turi", "Batafsil ma'lumot (To'liq)"]
             st.dataframe(
                 df_a_korsatish,
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "Sana va Vaqt": st.column_config.TextColumn("Sana va Vaqt", width="medium"),
-                    "Mas'ul Xodim": st.column_config.TextColumn("Mas'ul Xodim", width="medium"),
-                    "Harakat Turi": st.column_config.TextColumn("Harakat Turi", width="medium"),
-                    "Batafsil ma'lumot": st.column_config.TextColumn("Batafsil ma'lumot (To'liq)", width="large")
-                }
+                column_config=avto_kenglik_sozla(df_a_korsatish)
             )
         else:
             st.info("Hozircha tizimda o'zgarishlar qayd etilmagan.")

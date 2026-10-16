@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import io
 import os
+from tg_bot import tg_xabar_yubor
 
 try:
     import psycopg2
@@ -259,6 +260,69 @@ def jurnalga_yozish(obyekt_id, xodim, harakat, tafsilot):
     hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
     db.execute("INSERT INTO audit_log (vaqt, mijoz_id, xodim, harakat, tafsilot) VALUES (?,?,?,?,?)", (hozir, obyekt_id, xodim, harakat, tafsilot))
 
+def avto_checkout_tekshir():
+    """
+    Har safar tizim ishlaganda tekshiradi:
+    Agar mijozning chiqish sanasi o'tib ketgan bo'lsa (yoki bugun bo'lib, soat >= 12:00 bo'lsa)
+    va mijozning qarzi bo'lmasa (qoldiq <= 0), uni avtomatik 'Chiqib ketgan' (Arxiv) holatiga o'tkazadi
+    hamda Telegram botga xabar yuboradi.
+    """
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+    soat = uz_now.hour
+
+    if soat >= 12:
+        muddati_yetganlar = db.fetchall(
+            "SELECT mijoz_id, mijoz, xona, chiqish_sanasi, odam_soni FROM bronlar WHERE holat != 'Chiqib ketgan' AND qoldiq <= 0 AND chiqish_sanasi <= ?",
+            (bugun_str,)
+        )
+    else:
+        muddati_yetganlar = db.fetchall(
+            "SELECT mijoz_id, mijoz, xona, chiqish_sanasi, odam_soni FROM bronlar WHERE holat != 'Chiqib ketgan' AND qoldiq <= 0 AND chiqish_sanasi < ?",
+            (bugun_str,)
+        )
+
+    for m_id, m_ism, m_xona, m_chiqish, m_odam in muddati_yetganlar:
+        db.execute("UPDATE bronlar SET holat = 'Chiqib ketgan' WHERE mijoz_id = ?", (m_id,))
+        jurnalga_yozish(
+            m_id,
+            "Avto-Tizim (Y.S.H.)",
+            "Avto-Checkout (Arxivlandi)",
+            f"Mijoz ({m_ism} | {m_xona}) yashash muddati ({m_chiqish} 12:00) yakunlangani sababli avtomatik arxivga o'tkazildi."
+        )
+        tg_xabar_yubor(
+            "Avtomatik Checkout (Arxivga o'tkazildi)",
+            f"👤 <b>Mijoz:</b> {m_ism} ({m_odam} kishi)\n"
+            f"🛏 <b>Bo'shagan xona:</b> {m_xona}\n"
+            f"⏰ <b>Sabab:</b> Mijozning yashash muddati (<b>{m_chiqish} soat 12:00</b>) yakunlanganligi va muddat uzaytirilmaganligi sababli tizim tomonidan avtomatik ravishda faol ro'yxatdan chiqarildi va arxivga o'tkazildi.",
+            "Avto-Nazorat (Y.S.H. ERP)"
+        )
+
+def avto_kenglik_sozla(df):
+    """
+    Har qanday jadvaldagi (DataFrame) ustunlar ichidagi eng uzun matnga qarab
+    piksel kengligini belgilaydi — shunda Streamlit jadvalida GORIZONTAL SCROLLBAR
+    avtomatik chiqadi va hech qaysi yozuv (Izoh, Audit va h.k.) kesilib qolmaydi!
+    """
+    config = {}
+    if df is None or df.empty:
+        return config
+    for col in df.columns:
+        try:
+            max_data_len = int(df[col].astype(str).map(len).max())
+        except Exception:
+            max_data_len = len(str(col))
+        max_len = max(max_data_len, len(str(col)))
+        
+        col_lower = str(col).lower()
+        if any(k in col_lower for k in ["izoh", "tafsilot", "batafsil", "ma'lumot", "to'lov turi"]):
+            px = max(280, min(max_len * 9 + 40, 1200))
+            config[col] = st.column_config.Column(label=str(col), width=px)
+        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt"]):
+            px = max(160, min(max_len * 9 + 30, 500))
+            config[col] = st.column_config.Column(label=str(col), width=px)
+    return config
+
 def barcha_bazani_yuklash():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -287,6 +351,12 @@ def chiroyli_kartochka(icon, title, value, bg_color):
 def rangla_jadval(row):
     holat_val = str(row.get('Holat', row.get('holat', '')))
     q_raw = str(row.get('Qoldiq', row.get('qoldiq', '0')))
+    chiqish_raw = str(row.get('Chiqish', row.get('chiqish_sanasi', ''))).split(' ')[0].strip()
+    
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+    soat = uz_now.hour
+
     if 'Avans' in q_raw:
         qoldiq_val = 0
     else:
@@ -297,8 +367,12 @@ def rangla_jadval(row):
             qoldiq_val = 0
         
     if holat_val == 'Chiqib ketgan':
-        return ['background-color: #f1f5f9; color: #94a3b8'] * len(row)
+        return ['background-color: #f1f5f9; color: #64748b'] * len(row)
     elif qoldiq_val > 0:
-        return ['background-color: #fef2f2; color: #b91c1c'] * len(row)
+        # Qarzdor mijozlar — doim qizil
+        return ['background-color: #fef2f2; color: #b91c1c; font-weight: 600'] * len(row)
+    elif (chiqish_raw == bugun_str and soat >= 6) or (chiqish_raw != '' and chiqish_raw < bugun_str):
+        # Ertalab 06:00 dan boshlab bugun 12:00 da ketadigan mijozlarni SARG'AYTIRISH
+        return ['background-color: #fef08a; color: #854d0e; font-weight: 600'] * len(row)
     else:
         return ['background-color: #f0fdf4; color: #15803d'] * len(row)
