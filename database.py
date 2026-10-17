@@ -198,9 +198,7 @@ def init_db():
             kunlik_narx REAL, jami_summa REAL, faktik_narx REAL, tolagan_summa REAL,
             qoldiq REAL, tolov_turi TEXT, tolov_tafsiloti TEXT, holat TEXT,
             kirish_sanasi TEXT, chiqish_sanasi TEXT, bron_turi TEXT DEFAULT 'Hozir kirish',
-            izoh TEXT DEFAULT '',
-            telefon TEXT DEFAULT '', pasport TEXT DEFAULT '', pinfl TEXT DEFAULT '',
-            tugilgan_sana TEXT DEFAULT '', manzil TEXT DEFAULT '', emehmon TEXT DEFAULT 'Kutilmoqda'
+            izoh TEXT DEFAULT '', telefon TEXT DEFAULT ''
         )
     """)
 
@@ -272,11 +270,6 @@ def init_db():
         "ALTER TABLE bronlar ADD COLUMN bron_turi TEXT DEFAULT 'Hozir kirish'", 
         "ALTER TABLE bronlar ADD COLUMN izoh TEXT DEFAULT ''",
         "ALTER TABLE bronlar ADD COLUMN telefon TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN pasport TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN pinfl TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN tugilgan_sana TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN manzil TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN emehmon TEXT DEFAULT 'Kutilmoqda'",
         "ALTER TABLE mahsulotlar ADD COLUMN sub_kategoriya TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN hajmi TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN izoh TEXT DEFAULT ''",
@@ -290,7 +283,6 @@ def init_db():
         except Exception:
             pass
 
-    # Xona tozaligi jadvalini barcha 36 ta xona bilan to'ldirish
     try:
         if db.fetchone("SELECT COUNT(*) FROM xona_tozalik")[0] == 0:
             for t_dict in XONALAR.values():
@@ -488,13 +480,20 @@ def haftalik_hisobot_yuklash(bosh_sana_str, tugash_sana_str):
 def chiroyli_kartochka(icon, title, value, bg_color):
     is_dark = st.session_state.get("ui_tema", "🌙 Qorong'u (Dark UI)") == "🌙 Qorong'u (Dark UI)"
     if is_dark:
-        return f"""
-        <div style='background: #141724; border: 1px solid #262b40; border-top: 4px solid {bg_color}; padding: 16px; border-radius: 14px; color: #f8fafc; box-shadow: 0 6px 16px rgba(0,0,0,0.35); margin-bottom: 16px; font-family: sans-serif;'>
-            <div style='font-size: 13px; color: #94a3b8; font-weight: 500; margin-bottom: 6px;'>{icon} {title}</div>
-            <div style='font-size: 22px; font-weight: 800; color: #ffffff;'>{value}</div>
-        </div>
-        """
-    return f"<div style='background: linear-gradient(135deg, {bg_color} 0%, {bg_color}dd 100%); padding: 15px; border-radius: 12px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; font-family: sans-serif;'><div style='font-size: 13px; font-weight: 600; opacity: 0.9; margin-bottom: 5px;'>{icon} {title}</div><div style='font-size: 22px; font-weight: bold;'>{value}</div></div>"
+        return (
+            f"<div style='background: #141724; border: 1px solid #262b40; border-top: 4px solid {bg_color}; "
+            f"padding: 16px; border-radius: 14px; color: #f8fafc; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
+            f"margin-bottom: 16px; font-family: sans-serif;'>"
+            f"<div style='font-size: 13px; color: #94a3b8; font-weight: 500; margin-bottom: 6px;'>{icon} {title}</div>"
+            f"<div style='font-size: 22px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
+        )
+    return (
+        f"<div style='background: linear-gradient(135deg, {bg_color} 0%, {bg_color}dd 100%); "
+        f"padding: 15px; border-radius: 12px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); "
+        f"margin-bottom: 20px; font-family: sans-serif;'>"
+        f"<div style='font-size: 13px; font-weight: 600; opacity: 0.95; margin-bottom: 5px;'>{icon} {title}</div>"
+        f"<div style='font-size: 22px; font-weight: bold; color: white;'>{value}</div></div>"
+    )
 
 def rangla_jadval(row):
     is_dark = st.session_state.get("ui_tema", "🌙 Qorong'u (Dark UI)") == "🌙 Qorong'u (Dark UI)"
@@ -536,46 +535,30 @@ def rangla_jadval(row):
 
 def tema_css_yuklash(tema_nomi):
     if tema_nomi == "🌙 Qorong'u (Dark UI)":
-        st.markdown("""
-        <style>
-        .stApp { background-color: #0b0d14; color: #f1f5f9; }
-        section[data-testid="stSidebar"] { background-color: #111420 !important; border-right: 1px solid #1e2436; }
-        div[data-testid="metric-container"] {
-            background-color: #141724 !important;
-            border: 1px solid #262b40 !important;
-            padding: 16px 20px;
-            border-radius: 14px;
-            border-left: 5px solid #7c3aed !important;
-            color: #f8fafc !important;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-        }
-        div[data-testid="metric-container"] label { color: #94a3b8 !important; }
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #ffffff !important; }
-        .stForm, div[data-testid="stExpander"] {
-            background-color: #141724 !important;
-            border: 1px solid #262b40 !important;
-            border-radius: 14px !important;
-        }
-        h1, h2, h3, h4, h5, p, span, label { color: #e2e8f0; }
-        button[kind="primary"] {
-            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
-            border: none !important;
-            color: white !important;
-            border-radius: 10px !important;
-            font-weight: 600 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            "<style>"
+            ".stApp { background-color: #0b0d14; color: #f1f5f9; }"
+            "section[data-testid='stSidebar'] { background-color: #111420 !important; border-right: 1px solid #1e2436; }"
+            "div[data-testid='metric-container'] { background-color: #141724 !important; border: 1px solid #262b40 !important; padding: 16px 20px; border-radius: 14px; border-left: 5px solid #7c3aed !important; color: #f8fafc !important; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }"
+            "div[data-testid='metric-container'] label { color: #94a3b8 !important; }"
+            "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #ffffff !important; }"
+            ".stForm, div[data-testid='stExpander'] { background-color: #141724 !important; border: 1px solid #262b40 !important; border-radius: 14px !important; }"
+            "h1, h2, h3, h4, h5, p, span, label { color: #e2e8f0; }"
+            "button[kind='primary'] { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; }"
+            "</style>",
+            unsafe_allow_html=True
+        )
     else:
-        st.markdown("""
-        <style>
-        div[data-testid="metric-container"] {
-            background-color: #ffffff;
-            border: 1px solid #e0e6ed;
-            padding: 15px 20px;
-            border-radius: 12px;
-            border-left: 6px solid #4CAF50;
-            box-shadow: 2px 4px 15px rgba(0,0,0,0.05);
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            "<style>"
+            ".stApp { background-color: #f8fafc; color: #0f172a; }"
+            "section[data-testid='stSidebar'] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }"
+            "div[data-testid='metric-container'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; padding: 15px 20px; border-radius: 12px; border-left: 6px solid #4f46e5 !important; color: #0f172a !important; box-shadow: 2px 4px 12px rgba(0,0,0,0.05); }"
+            "div[data-testid='metric-container'] label { color: #475569 !important; }"
+            "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #0f172a !important; }"
+            ".stForm, div[data-testid='stExpander'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 12px !important; }"
+            "h1, h2, h3, h4, h5, p, span, label { color: #0f172a; }"
+            "button[kind='primary'] { background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; border: none !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; }"
+            "</style>",
+            unsafe_allow_html=True
+        )

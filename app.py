@@ -136,7 +136,7 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     st.rerun()
 
 # ==========================================
-# YORDAMCHI FUNKSIYA: YANGI BRON FORMASI (ICHKI TIZIM UCHUN SODDA VA TEZKOR)
+# YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
 # ==========================================
 def render_qabul_formasi(form_key_suffix="main"):
     tomon = st.radio(
@@ -288,7 +288,7 @@ if sahifa == "🏠 Boshqaruv paneli":
     oy_nomlari_uz = ["", "yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"]
     bugun_matn = f"Bugun, {hozirgi_uz_vaqt.day}-{oy_nomlari_uz[hozirgi_uz_vaqt.month]}, {hafta_kunlari_uz[hozirgi_uz_vaqt.weekday()]}"
 
-    st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='opacity: 0.7; margin-top: 2px;'>{bugun_matn} | Moliya davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='opacity: 0.75; margin-top: 2px;'>{bugun_matn} | Moliya davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
 
     df_barcha = db.read_df("SELECT * FROM bronlar")
     df_savdolar = db.read_df("SELECT * FROM savdolar")
@@ -317,46 +317,45 @@ if sahifa == "🏠 Boshqaruv paneli":
     bugungi_tushum_sum = df_tolovlar[df_tolovlar['sana'] == bugungi_sana]['summa'].fillna(0).sum() if not df_tolovlar.empty else 0
 
     card_bg = "#141724" if is_dark else "#ffffff"
-    card_border = "#262b40" if is_dark else "#e2e8f0"
-    text_main = "#ffffff" if is_dark else "#1e293b"
-    text_sub = "#94a3b8" if is_dark else "#64748b"
+    card_border = "#262b40" if is_dark else "#cbd5e1"
+    text_main = "#ffffff" if is_dark else "#0f172a"
+    text_sub = "#94a3b8" if is_dark else "#475569"
 
     oc1, oc2, oc3, oc4 = st.columns(4)
     with oc1:
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); padding: 20px; border-radius: 16px; color: white; box-shadow: 0 8px 20px rgba(124,58,237,0.3);'>
-            <div style='font-size: 14px; opacity: 0.9;'>Band xonalar</div>
-            <div style='font-size: 32px; font-weight: 800; margin: 6px 0;'>{band_xonalar_soni} <span style='font-size: 20px; opacity: 0.8;'>/ {jami_xonalar_soni}</span></div>
-            <div style='font-size: 13px; margin-bottom: 8px;'>{bandlik_foiz}% bandlik</div>
-            <div style='background: rgba(255,255,255,0.25); height: 6px; border-radius: 4px; width: 100%;'>
-                <div style='background: #ffffff; height: 6px; border-radius: 4px; width: {bandlik_foiz}%;'></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); padding: 20px; border-radius: 16px; color: white; box-shadow: 0 8px 20px rgba(124,58,237,0.3);'>"
+            f"<div style='font-size: 14px; color: white; opacity: 0.95;'>Band xonalar</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: white; margin: 6px 0;'>{band_xonalar_soni} <span style='font-size: 20px; color: white; opacity: 0.85;'>/ {jami_xonalar_soni}</span></div>"
+            f"<div style='font-size: 13px; color: white; margin-bottom: 8px;'>{bandlik_foiz}% bandlik</div>"
+            f"<div style='background: rgba(255,255,255,0.25); height: 6px; border-radius: 4px; width: 100%;'>"
+            f"<div style='background: #ffffff; height: 6px; border-radius: 4px; width: {bandlik_foiz}%;'></div></div></div>",
+            unsafe_allow_html=True
+        )
     with oc2:
-        st.markdown(f"""
-        <div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>
-            <div style='font-size: 14px; color: {text_sub};'>Bugungi kirishlar</div>
-            <div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_kirishlar_df)}</div>
-            <div style='font-size: 13px; color: {text_sub};'>{hali_kirmagan_soni} tasi hali kirmagan (Bron)</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>"
+            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi kirishlar</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_kirishlar_df)}</div>"
+            f"<div style='font-size: 13px; color: {text_sub};'>{hali_kirmagan_soni} tasi hali kirmagan (Bron)</div></div>",
+            unsafe_allow_html=True
+        )
     with oc3:
-        st.markdown(f"""
-        <div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>
-            <div style='font-size: 14px; color: {text_sub};'>Bugungi chiqishlar</div>
-            <div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_chiqishlar_df)}</div>
-            <div style='font-size: 13px; color: {text_sub};'>{hali_chiqmagan_soni} tasi hali chiqmagan</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>"
+            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi chiqishlar</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_chiqishlar_df)}</div>"
+            f"<div style='font-size: 13px; color: {text_sub};'>{hali_chiqmagan_soni} tasi hali chiqmagan</div></div>",
+            unsafe_allow_html=True
+        )
     with oc4:
-        st.markdown(f"""
-        <div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>
-            <div style='font-size: 14px; color: {text_sub};'>Bugungi tushum</div>
-            <div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{bugungi_tushum_sum:,.0f} UZS</div>
-            <div style='font-size: 13px; color: {text_sub};'>bugun qabul qilingan to'lovlar</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>"
+            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi tushum</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{bugungi_tushum_sum:,.0f} UZS</div>"
+            f"<div style='font-size: 13px; color: {text_sub};'>bugun qabul qilingan to'lovlar</div></div>",
+            unsafe_allow_html=True
+        )
 
     st.write("")
     with st.container(border=True):
@@ -366,7 +365,7 @@ if sahifa == "🏠 Boshqaruv paneli":
         else:
             for _, k_row in bugungi_kirishlar_df.iterrows():
                 ck1, ck2 = st.columns([4, 1.2])
-                ck1.markdown(f"🟢 **{k_row['mijoz']}** ({k_row['odam_soni']} kishi)  \n<span style='font-size:13px; opacity:0.75;'>Kelish • {k_row['xona']}</span>", unsafe_allow_html=True)
+                ck1.markdown(f"🟢 **{k_row['mijoz']}** ({k_row['odam_soni']} kishi) — *Kelish • {k_row['xona']}*")
                 if k_row.get('bron_turi') == 'Bron':
                     if ck2.button("🔑 Kiritish (check-in)", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET bron_turi='Hozir kirish' WHERE mijoz_id=?", (k_row['mijoz_id'],))
@@ -378,7 +377,7 @@ if sahifa == "🏠 Boshqaruv paneli":
             for _, ch_row in bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan'].iterrows():
                 cc1, cc2 = st.columns([4, 1.2])
                 qarz_b = f" | ⚠️ Qarz: {int(ch_row['qoldiq']):,} UZS" if ch_row['qoldiq'] > 0 else ""
-                cc1.markdown(f"🟡 **{ch_row['mijoz']}** ({ch_row['odam_soni']} kishi{qarz_b})  \n<span style='font-size:13px; opacity:0.75;'>Ketish (12:00) • {ch_row['xona']}</span>", unsafe_allow_html=True)
+                cc1.markdown(f"🟡 **{ch_row['mijoz']}** ({ch_row['odam_soni']} kishi{qarz_b}) — *Ketish (12:00) • {ch_row['xona']}*")
                 if ch_row['qoldiq'] <= 0:
                     if cc2.button("🚪 Chiqarish (check-out)", key=f"dash_out_{ch_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET holat='Chiqib ketgan' WHERE mijoz_id=?", (ch_row['mijoz_id'],))
@@ -391,14 +390,15 @@ if sahifa == "🏠 Boshqaruv paneli":
     with st.container(border=True):
         st.markdown("##### 🛏️ Bugungi xonalar holati")
         xh1, xh2, xh3 = st.columns(3)
-        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800;'>{band_xonalar_soni}</div><div style='font-size:13px; color:#a855f7;'>● Band xonalar</div></div>", unsafe_allow_html=True)
-        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800;'>{bosh_toza_xonalar_soni}</div><div style='font-size:13px; color:#22c55e;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
-        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800;'>{tozalash_kerak_soni}</div><div style='font-size:13px; color:#ef4444;'>● Tozalash kerak</div></div>", unsafe_allow_html=True)
+        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{band_xonalar_soni}</div><div style='font-size:13px; color:#8b5cf6; font-weight:600;'>● Band xonalar</div></div>", unsafe_allow_html=True)
+        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{bosh_toza_xonalar_soni}</div><div style='font-size:13px; color:#16a34a; font-weight:600;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
+        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{tozalash_kerak_soni}</div><div style='font-size:13px; color:#dc2626; font-weight:600;'>● Tozalash kerak</div></div>", unsafe_allow_html=True)
 
         st.write("")
         st.markdown("##### 📊 Keyingi 7 kunlik bandlik")
         kun_qisqa = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
         bar_cols = st.columns(7)
+        lbl_col = "#a78bfa" if is_dark else "#4f46e5"
         for i in range(7):
             d_obj = hozirgi_uz_vaqt.date() + timedelta(days=i)
             d_str = d_obj.strftime("%Y-%m-%d")
@@ -409,17 +409,16 @@ if sahifa == "🏠 Boshqaruv paneli":
             else:
                 d_band_xonalar = 0
             d_foiz = int(round((d_band_xonalar / jami_xonalar_soni) * 100))
-            bar_color = "#8b5cf6" if i == 0 else "#4c1d95"
+            bar_color = "#7c3aed" if i == 0 else "#6366f1"
             with bar_cols[i]:
-                st.markdown(f"""
-                <div style='text-align: center;'>
-                    <div style='font-size: 12px; font-weight: 700; color: #a78bfa; margin-bottom: 6px;'>{d_foiz}%</div>
-                    <div style='height: 110px; width: 34px; background: rgba(139,92,246,0.12); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>
-                        <div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div>
-                    </div>
-                    <div style='font-size: 13px; margin-top: 6px; opacity: 0.85;'>{k_nom} ({d_obj.strftime('%d.%m')})</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='text-align: center;'>"
+                    f"<div style='font-size: 12px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px;'>{d_foiz}%</div>"
+                    f"<div style='height: 100px; width: 34px; background: rgba(124,58,237,0.12); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
+                    f"<div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div></div>"
+                    f"<div style='font-size: 13px; margin-top: 6px; color: {text_main}; font-weight: 500;'>{k_nom} ({d_obj.strftime('%d.%m')})</div></div>",
+                    unsafe_allow_html=True
+                )
 
     st.markdown("---")
     st.subheader(f"💰 Moliya va Kassa Hisoboti — {g_davr_nomi}")
@@ -505,7 +504,7 @@ if sahifa == "🏠 Boshqaruv paneli":
             st.dataframe(df_m_kam, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_m_kam))
 
 # ====================================================
-# SAHIFA 2: 📅 TIMELINE & SHAXMATKA
+# SAHIFA 2: 📅 TIMELINE & SHAXMATKA (100% BE-XATO COLSPAN TIMELINE!)
 # ====================================================
 elif sahifa == "📅 Timeline & Shaxmatka":
     tl_col1, tl_col2 = st.columns([3, 1])
@@ -521,119 +520,172 @@ elif sahifa == "📅 Timeline & Shaxmatka":
     kun_soni_tl = col_kun.radio("Ko'rinish:", [7, 14, 30], index=1, horizontal=True, format_func=lambda x: f"{x} kun")
     bosh_sana = col_san.date_input("Boshlanish sanasi:", toshkent_vaqti().date() - timedelta(days=1))
 
-    rejim_tl = st.radio(
+    c_r1, c_r2 = st.columns([2.5, 1])
+    rejim_tl = c_r1.radio(
         "Shaxmatka uslubi:",
         ["📊 Grafik Timeline (Videodagidek chiziqli + Hover)", "🔲 Jadval Shaxmatka (Bo'sh o'rinlar soni bilan)"],
         horizontal=True
     )
+    arxiv_korsat_tl = c_r2.checkbox("⚪ Chiqib ketganlarni ham ko'rsatish", value=False)
 
     sana_royxati = [bosh_sana + timedelta(days=i) for i in range(kun_soni_tl)]
-    bosh_sana_str = bosh_sana.strftime("%Y-%m-%d")
+    sana_str_list = [d.strftime("%Y-%m-%d") for d in sana_royxati]
+    bosh_sana_str = sana_str_list[0]
     oxirgi_sana_str = (bosh_sana + timedelta(days=kun_soni_tl)).strftime("%Y-%m-%d")
     tozalik_map = barcha_xona_tozalik_ol()
 
     if rejim_tl == "📊 Grafik Timeline (Videodagidek chiziqli + Hover)":
-        st.markdown("""
-        <div style='display:flex; gap:18px; font-size:13px; margin-bottom:10px; flex-wrap:wrap;'>
-            <span>🟢 <b>Kirish qilingan (To'langan)</b></span>
-            <span>🟠 <b>Kutilmoqda (Oldindan bron)</b></span>
-            <span>🔴 <b>To'lanmagan (Qarzdor)</b></span>
-            <span>⚪ <b>Chiqib ketgan (Arxiv)</b></span>
-            <span>🔴 <i>Xona yonidagi qizil nuqta — Tozalash kerak</i></span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        tl_bronlar = db.read_df(
-            "SELECT * FROM bronlar WHERE kirish_sanasi < ? AND chiqish_sanasi > ? ORDER BY id ASC",
-            (oxirgi_sana_str, bosh_sana_str)
+        st.markdown(
+            "<div style='display:flex; gap:18px; font-size:13px; margin-bottom:10px; flex-wrap:wrap;'>"
+            "<span>🟢 <b>Kirish qilingan (To'langan)</b></span>"
+            "<span>🟠 <b>Kutilmoqda (Oldindan bron)</b></span>"
+            "<span>🔴 <b>To'lanmagan (Qarzdor)</b></span>"
+            "<span>⚪ <b>Chiqib ketgan (Arxiv)</b></span>"
+            "<span>🔴 <i>Xona yonidagi qizil nuqta — Tozalash kerak</i></span>"
+            "</div>",
+            unsafe_allow_html=True
         )
+
+        if arxiv_korsat_tl:
+            tl_bronlar = db.read_df(
+                "SELECT * FROM bronlar WHERE kirish_sanasi < ? AND chiqish_sanasi > ? ORDER BY kirish_sanasi ASC, id ASC",
+                (oxirgi_sana_str, bosh_sana_str)
+            )
+        else:
+            tl_bronlar = db.read_df(
+                "SELECT * FROM bronlar WHERE holat != 'Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi > ? ORDER BY kirish_sanasi ASC, id ASC",
+                (oxirgi_sana_str, bosh_sana_str)
+            )
 
         kun_nom_qisqa = ["DU", "SE", "CH", "PA", "JU", "SH", "YA"]
         bg_tbl = "#111420" if is_dark else "#ffffff"
         border_tbl = "#22273b" if is_dark else "#cbd5e1"
-        txt_tbl = "#e2e8f0" if is_dark else "#1e293b"
+        txt_tbl = "#e2e8f0" if is_dark else "#0f172a"
+        sec_hdr_bg = "rgba(139,92,246,0.16)" if is_dark else "#ede9fe"
+        sec_hdr_col = "#c4b5fd" if is_dark else "#4c1d95"
+        room_bg = "rgba(124,58,237,0.06)" if is_dark else "#f8fafc"
 
-        html_tl = f"""
-        <style>
-        .ysh-tl-wrap {{ overflow-x: auto; border: 1px solid {border_tbl}; border-radius: 14px; background: {bg_tbl}; padding-bottom: 8px; }}
-        .ysh-tl-table {{ width: 100%; border-collapse: collapse; font-family: sans-serif; color: {txt_tbl}; min-width: 900px; }}
-        .ysh-tl-table th, .ysh-tl-table td {{ border: 1px solid {border_tbl}; padding: 6px 4px; text-align: center; font-size: 12px; position: relative; }}
-        .ysh-tl-room {{ text-align: left !important; padding-left: 12px !important; font-weight: 700; min-width: 140px; background: rgba(124,58,237,0.06); }}
-        .ysh-bar {{
-            display: block; padding: 5px 8px; border-radius: 7px; color: #fff; font-weight: 600;
-            font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            margin: 2px 1px; cursor: pointer; position: relative; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-        }}
-        .ysh-bar:hover {{ overflow: visible; z-index: 999; }}
-        .ysh-bar .ysh-tip {{
-            visibility: hidden; opacity: 0; position: absolute; left: 10px; top: 30px;
-            background: #0b0d14; color: #f8fafc; border: 1px solid #4c1d95; border-radius: 10px;
-            padding: 10px 14px; width: 250px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.65);
-            font-weight: 400; font-size: 12px; line-height: 1.5; transition: opacity 0.15s; pointer-events: none;
-        }}
-        .ysh-bar:hover .ysh-tip {{ visibility: visible; opacity: 1; }}
-        </style>
-        <div class='ysh-tl-wrap'><table class='ysh-tl-table'><thead><tr><th class='ysh-tl-room'>Xona</th>
-        """
+        # MUHIM: Markdown code-block bo'lib qolmasligi uchun HTML qatorlarida boshlang'ich 4 ta probel bo'lmasligi shart!
+        html_parts = [
+            f"<style>"
+            f".ysh-tl-wrap {{ overflow-x: auto; border: 1px solid {border_tbl}; border-radius: 14px; background: {bg_tbl}; padding-bottom: 12px; }}"
+            f".ysh-tl-table {{ width: 100%; border-collapse: collapse; font-family: sans-serif; color: {txt_tbl}; min-width: 950px; table-layout: fixed; }}"
+            f".ysh-tl-table th, .ysh-tl-table td {{ border: 1px solid {border_tbl}; padding: 5px 3px; text-align: center; font-size: 12px; position: relative; vertical-align: middle; height: 38px; }}"
+            f".ysh-tl-room {{ text-align: left !important; padding: 6px 12px !important; font-weight: 700; width: 145px !important; background: {room_bg}; }}"
+            f".ysh-bar {{ display: block; padding: 6px 10px; border-radius: 8px; color: #ffffff !important; font-weight: 600; font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 1px; cursor: pointer; position: relative; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }}"
+            f".ysh-bar:hover {{ overflow: visible; z-index: 999; }}"
+            f".ysh-bar .ysh-tip {{ visibility: hidden; opacity: 0; position: absolute; left: 8px; top: 32px; background: #0f172a; color: #f8fafc !important; border: 1px solid #7c3aed; border-radius: 10px; padding: 10px 14px; width: 255px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.65); font-weight: 400; font-size: 12px; line-height: 1.5; transition: opacity 0.15s; pointer-events: none; white-space: normal; }}"
+            f".ysh-bar .ysh-tip b, .ysh-bar .ysh-tip span {{ color: #f8fafc !important; }}"
+            f".ysh-bar:hover .ysh-tip {{ visibility: visible; opacity: 1; }}"
+            f"</style>"
+            f"<div class='ysh-tl-wrap'><table class='ysh-tl-table'><thead><tr><th class='ysh-tl-room'>Xona</th>"
+        ]
+
         for d in sana_royxati:
             is_today = (d.strftime("%Y-%m-%d") == bugungi_sana)
-            th_style = "background: #7c3aed; color: white; border-radius: 6px;" if is_today else ""
-            html_tl += f"<th style='{th_style}'>{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></th>"
-        html_tl += "</tr></thead><tbody>"
+            th_style = "background: #7c3aed; color: #ffffff !important; border-radius: 6px;" if is_today else ""
+            html_parts.append(f"<th style='{th_style}'>{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></th>")
+        html_parts.append("</tr></thead><tbody>")
 
         for tomon, xonalar in XONALAR.items():
             if tanlangan_katalog != "Barchasi" and tomon != tanlangan_katalog:
                 continue
-            html_tl += f"<tr><td colspan='{len(sana_royxati)+1}' style='text-align:left; padding:8px 12px; font-weight:800; background:rgba(139,92,246,0.12); color:#a78bfa;'>▾ {tomon.upper()} ({len(xonalar)} XONA)</td></tr>"
+            html_parts.append(
+                f"<tr><td colspan='{len(sana_royxati)+1}' style='text-align:left; padding:8px 12px; font-weight:800; background:{sec_hdr_bg}; color:{sec_hdr_col};'>"
+                f"▾ {tomon.upper()} ({len(xonalar)} XONA)</td></tr>"
+            )
             for xona, (sigim, _) in xonalar.items():
-                iflos_dot = "<span style='color:#ef4444; float:right; font-size:14px;' title='Tozalash kerak'>●</span>" if tozalik_map.get(xona) == "Tozalash kerak" else ""
+                iflos_dot = "<span style='color:#ef4444; float:right; font-size:15px;' title='Tozalash kerak'>●</span>" if tozalik_map.get(xona) == "Tozalash kerak" else ""
                 tur_k = "Luxe" if tomon == "O'rtadagi" else f"{sigim} kishilik"
-                html_tl += f"<tr><td class='ysh-tl-room'>{xona} {iflos_dot}<br><span style='font-size:11px; opacity:0.65; font-weight:400;'>{tur_k}</span></td>"
                 
                 x_df = tl_bronlar[tl_bronlar['xona'] == xona] if not tl_bronlar.empty else pd.DataFrame()
-                for d in sana_royxati:
-                    d_str = d.strftime("%Y-%m-%d")
-                    cell_html = ""
-                    if not x_df.empty:
-                        shu_kun_df = x_df[(x_df['kirish_sanasi'] <= d_str) & (x_df['chiqish_sanasi'] > d_str)]
-                        for _, br in shu_kun_df.iterrows():
-                            if br['holat'] == 'Chiqib ketgan':
-                                b_col = "#64748b"
-                                hol_nom = "Chiqib ketgan"
-                            elif float(br.get('qoldiq', 0) or 0) > 0:
-                                b_col = "#dc2626"
-                                hol_nom = "Qarzdor"
-                            elif br.get('bron_turi') == 'Bron' or br['kirish_sanasi'] > bugungi_sana:
-                                b_col = "#d97706"
-                                hol_nom = "Kutilmoqda (Bron)"
-                            else:
-                                b_col = "#16a34a"
-                                hol_nom = "Kirish qilingan"
+                
+                # Xonadagi bronlarni ustma-ust tushmasdan chiziqli (Gantt lanes) joylashtirish
+                lanes = []
+                if not x_df.empty:
+                    for _, br in x_df.iterrows():
+                        k_s = str(br['kirish_sanasi'])
+                        ch_s = str(br['chiqish_sanasi'])
+                        start_idx = 0
+                        for idx_d, d_s in enumerate(sana_str_list):
+                            if d_s >= k_s:
+                                start_idx = idx_d
+                                break
+                        end_idx = len(sana_str_list)
+                        for idx_d, d_s in enumerate(sana_str_list):
+                            if d_s >= ch_s:
+                                end_idx = idx_d
+                                break
+                        if end_idx <= start_idx:
+                            end_idx = min(len(sana_str_list), start_idx + 1)
 
-                            m_ism = str(br['mijoz']).replace("<", "").replace(">", "")
-                            m_tel = str(br.get('telefon', '') or '—')
+                        joylandi = False
+                        for lane in lanes:
+                            if all(slot is None for slot in lane[start_idx:end_idx]):
+                                lane[start_idx] = (br, end_idx - start_idx)
+                                for s_i in range(start_idx + 1, end_idx):
+                                    lane[s_i] = "SKIP"
+                                joylandi = True
+                                break
+                        if not joylandi:
+                            new_lane = [None] * len(sana_str_list)
+                            new_lane[start_idx] = (br, end_idx - start_idx)
+                            for s_i in range(start_idx + 1, end_idx):
+                                new_lane[s_i] = "SKIP"
+                            lanes.append(new_lane)
+
+                if not lanes:
+                    lanes = [[None] * len(sana_str_list)]
+
+                rowspan_n = len(lanes)
+                for l_idx, lane in enumerate(lanes):
+                    html_parts.append("<tr>")
+                    if l_idx == 0:
+                        html_parts.append(
+                            f"<td class='ysh-tl-room' rowspan='{rowspan_n}'>{xona} {iflos_dot}<br>"
+                            f"<span style='font-size:11px; opacity:0.7; font-weight:400;'>{tur_k}</span></td>"
+                        )
+                    for slot in lane:
+                        if slot == "SKIP":
+                            continue
+                        elif slot is None:
+                            html_parts.append("<td></td>")
+                        else:
+                            br, span_len = slot
+                            if br['holat'] == 'Chiqib ketgan':
+                                b_col, hol_nom = "#64748b", "Chiqib ketgan"
+                            elif float(br.get('qoldiq', 0) or 0) > 0:
+                                b_col, hol_nom = "#dc2626", "Qarzdor"
+                            elif br.get('bron_turi') == 'Bron' or br['kirish_sanasi'] > bugungi_sana:
+                                b_col, hol_nom = "#d97706", "Kutilmoqda (Bron)"
+                            else:
+                                b_col, hol_nom = "#16a34a", "Kirish qilingan"
+
+                            m_ism = str(br['mijoz']).replace("<", "").replace(">", "").replace("'", "`")
+                            m_tel = str(br.get('telefon', '') or '—').replace("<", "").replace(">", "")
                             m_jam = int(br.get('faktik_narx', 0) or 0)
                             m_tol = int(br.get('tolagan_summa', 0) or 0)
                             m_qar = max(0, int(br.get('qoldiq', 0) or 0))
                             vik_icon = "🔒 " if "To'liq band" in str(br.get('xona_turi', '')) else ""
 
-                            cell_html += f"""
-                            <div class='ysh-bar' style='background:{b_col};'>
-                                {vik_icon}{m_ism} ({br['odam_soni']}k)
-                                <div class='ysh-tip'>
-                                    <b style='font-size:14px; color:#a78bfa;'>{m_ism}</b><br>
-                                    <b>Telefon:</b> {m_tel}<br>
-                                    <b>Kelish–Ketish:</b> {br['kirish_sanasi']} — {br['chiqish_sanasi']}<br>
-                                    <b>Mehmon:</b> {br['odam_soni']} kishi ({br['kunlar']} kecha) • {hol_nom}<br>
-                                    <b>Jami:</b> {m_jam:,} UZS<br>
-                                    <b>To'langan / Qarz:</b> {m_tol:,} / <span style='color:#f87171;'>{m_qar:,} UZS</span>
-                                </div>
-                            </div>
-                            """
-                    html_tl += f"<td>{cell_html}</td>"
-                html_tl += "</tr>"
-        html_tl += "</tbody></table></div>"
-        st.markdown(html_tl, unsafe_allow_html=True)
+                            bar_html = (
+                                f"<td colspan='{span_len}'>"
+                                f"<div class='ysh-bar' style='background:{b_col};'>"
+                                f"{vik_icon}{m_ism} ({br['odam_soni']}k)"
+                                f"<div class='ysh-tip'>"
+                                f"<b>{m_ism}</b><br>"
+                                f"<b>Telefon:</b> {m_tel}<br>"
+                                f"<b>Kelish–Ketish:</b> {br['kirish_sanasi']} — {br['chiqish_sanasi']}<br>"
+                                f"<b>Mehmon:</b> {br['odam_soni']} kishi ({br['kunlar']} kecha) • {hol_nom}<br>"
+                                f"<b>Jami:</b> {m_jam:,} UZS<br>"
+                                f"<b>To'langan / Qarz:</b> {m_tol:,} / {m_qar:,} UZS"
+                                f"</div></div></td>"
+                            )
+                            html_parts.append(bar_html)
+                    html_parts.append("</tr>")
+
+        html_parts.append("</tbody></table></div>")
+        st.markdown("".join(html_parts), unsafe_allow_html=True)
 
     else:
         oraliq_bronlar = db.read_df("SELECT xona, xona_turi, kirish_sanasi, chiqish_sanasi, odam_soni FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi > ?", (oxirgi_sana_str, bosh_sana_str))
@@ -691,7 +743,7 @@ elif sahifa == "📝 Yangi Bron / Qabul":
     render_qabul_formasi("page")
 
 # ====================================================
-# SAHIFA 4: 👥 BRONLAR VA MEHMONLAR (PASPORT VA E-MEHMONSIZ, SOF ICHKI FOLIO BILAN!)
+# SAHIFA 4: 👥 BRONLAR VA MEHMONLAR
 # ====================================================
 elif sahifa == "👥 Bronlar va Mehmonlar":
     st.header("👥 Bronlar va Mehmonlar Boshqaruvi")
@@ -775,9 +827,6 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
             else:
                 st.info("Arxivda mijozlar topilmadi.")
 
-    # ----------------------------------------------------
-    # BRON TAFSILOTLARI (PASPORT VA E-MEHMONSIZ, SOF ICHKI FOLIO)
-    # ----------------------------------------------------
     elif ko_rejim == "🧾 Bron tafsilotlari (Shaxsiy karta, To'lovlar & Kvitansiya)":
         if df.empty:
             st.info("Bazada mijozlar yo'q.")
@@ -789,7 +838,6 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
             f_id = tanlangan_folio.split(" — ")[0]
             f_row = df[df['mijoz_id'] == f_id].iloc[0]
 
-            # 1. YUQORI PROFIL VA BALANS BLOKI
             with st.container(border=True):
                 fc1, fc2 = st.columns([2, 1.5])
                 with fc1:
@@ -805,7 +853,6 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                 b_c2.metric("✅ TO'LANGAN", f"{int(f_row['tolagan_summa']):,} UZS")
                 b_c3.metric("⚠️ QARZ", f"{max(0, int(f_row['qoldiq'])):,} UZS")
 
-            # 2. ICHKI QUYIDAGI MA'LUMOTLAR (FAQAT ISM, TELEFON VA IZOH — IXTIYORIY)
             with st.container(border=True):
                 st.markdown("##### 📝 Mehmonning ichki ma'lumotlari (Barchasi ixtiyoriy)")
                 with st.form("folio_anketa_form", enter_to_submit=False):
@@ -826,29 +873,27 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         st.success("✅ Ma'lumotlar saqlandi!")
                         st.rerun()
 
-            # 3. CHOP ETISH UCHUN ICHKI KVITANSIYA / CHEK
             with st.expander("🖨️ Hisobni chop etish (Ichki Kvitansiya / Chek)"):
-                st.markdown(f"""
-                <div style='background:#ffffff; color:#0f172a; padding:24px; border-radius:12px; border:2px dashed #64748b; max-width:650px; margin:0 auto; font-family:monospace;'>
-                    <h3 style='text-align:center; color:#0f172a; margin:0;'>🏨 YANGI SERGELI HOSTEL (Y.S.H.)</h3>
-                    <p style='text-align:center; color:#475569; margin:4px 0 14px 0;'>Ichki Hisob-kitob Cheki № {f_id}</p>
-                    <hr style='border:1px solid #cbd5e1;'>
-                    <p style='color:#0f172a;'><b>Mehmon:</b> {f_row['mijoz']} ({f_row['odam_soni']} kishi)<br>
-                    <b>Telefon:</b> {f_row.get('telefon') or '—'}<br>
-                    <b>Joylashgan xona:</b> {f_row['xona']} ({f_row.get('xona_turi') or 'Standart'})<br>
-                    <b>Kirish vaqti:</b> {f_row['kirish_vaqti_korsat']}<br>
-                    <b>Chiqish vaqti:</b> {f_row['chiqish_sanasi']} (soat 12:00)<br>
-                    <b>Yashash muddati:</b> {f_row['kunlar']} kecha</p>
-                    <hr style='border:1px solid #cbd5e1;'>
-                    <p style='color:#0f172a; font-size:15px;'><b>Jami hisoblangan summa:</b> {int(f_row['faktik_narx']):,} UZS<br>
-                    <b>To'langan summa:</b> {int(f_row['tolagan_summa']):,} UZS ({f_row.get('tolov_tafsiloti') or 'Naqd'})<br>
-                    <b>Qoldiq qarz:</b> {max(0, int(f_row['qoldiq'])):,} UZS</p>
-                    <hr style='border:1px solid #cbd5e1;'>
-                    <p style='color:#475569; font-size:12px;'>Mas'ul: {xodim_ismi} | Vaqt: {toshkent_vaqti().strftime('%d.%m.%Y %H:%M')}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='background:#ffffff; color:#0f172a; padding:24px; border-radius:12px; border:2px dashed #64748b; max-width:650px; margin:0 auto; font-family:monospace;'>"
+                    f"<h3 style='text-align:center; color:#0f172a; margin:0;'>🏨 YANGI SERGELI HOSTEL (Y.S.H.)</h3>"
+                    f"<p style='text-align:center; color:#475569; margin:4px 0 14px 0;'>Ichki Hisob-kitob Cheki № {f_id}</p>"
+                    f"<hr style='border:1px solid #cbd5e1;'>"
+                    f"<p style='color:#0f172a;'><b>Mehmon:</b> {f_row['mijoz']} ({f_row['odam_soni']} kishi)<br>"
+                    f"<b>Telefon:</b> {f_row.get('telefon') or '—'}<br>"
+                    f"<b>Joylashgan xona:</b> {f_row['xona']} ({f_row.get('xona_turi') or 'Standart'})<br>"
+                    f"<b>Kirish vaqti:</b> {f_row['kirish_vaqti_korsat']}<br>"
+                    f"<b>Chiqish vaqti:</b> {f_row['chiqish_sanasi']} (soat 12:00)<br>"
+                    f"<b>Yashash muddati:</b> {f_row['kunlar']} kecha</p>"
+                    f"<hr style='border:1px solid #cbd5e1;'>"
+                    f"<p style='color:#0f172a; font-size:15px;'><b>Jami hisoblangan summa:</b> {int(f_row['faktik_narx']):,} UZS<br>"
+                    f"<b>To'langan summa:</b> {int(f_row['tolagan_summa']):,} UZS ({f_row.get('tolov_tafsiloti') or 'Naqd'})<br>"
+                    f"<b>Qoldiq qarz:</b> {max(0, int(f_row['qoldiq'])):,} UZS</p>"
+                    f"<hr style='border:1px solid #cbd5e1;'>"
+                    f"<p style='color:#475569; font-size:12px;'>Mas'ul: {xodim_ismi} | Vaqt: {toshkent_vaqti().strftime('%d.%m.%Y %H:%M')}</p></div>",
+                    unsafe_allow_html=True
+                )
 
-            # 4. 4 TA MOLIYAVIY TAFSILOT JADVALI (7-RASMGA MOS)
             with st.expander("🛏️ 1. Bandlangan xonalar (Kunma-kun yoyilma)", expanded=True):
                 try:
                     k_dt = datetime.strptime(str(f_row['kirish_sanasi']), "%Y-%m-%d")
@@ -894,9 +939,6 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                 else:
                     st.caption("Qaytarilgan to'lovlar (Vozvrat) mavjud emas (0 UZS).")
 
-    # ----------------------------------------------------
-    # TEZKOR AMALLAR
-    # ----------------------------------------------------
     else:
         barcha_faol_va_bron = df[df['holat'] != 'Chiqib ketgan'] if not df.empty else pd.DataFrame()
         amal_tanlov = st.radio(
