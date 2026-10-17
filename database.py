@@ -236,10 +236,6 @@ def xona_sigimini_ol(xona_nomi):
     return 0
 
 def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
-    """
-    Xonada tanlangan sanalar oralig'ida nechta joy bandligini hisoblaydi.
-    Agar xonada 'To'liq band' (Vikup) qilingan bron bo'lsa, xona sig'imi to'liq band deb qaytariladi!
-    """
     sigim = xona_sigimini_ol(xona_nomi)
     if exclude_mijoz_id:
         rows = db.fetchall(
@@ -259,11 +255,27 @@ def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijo
             band += int(r_odam or 1)
     return min(sigim, band)
 
+def xona_jinsini_tekshir(xona_nomi, kirish_str, chiqish_str, yangi_jins, exclude_mijoz_id=None):
+    """
+    Umumiy xonada o'tirgan mijozlarning jinsi bilan yangi mijoz jinsini solishtiradi.
+    Agar mos kelmasa, xonadagi jins nomini qaytaradi (masalan 'Erkak' yoki 'Ayol'), mos bo'lsa None qaytaradi.
+    """
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT jinsi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT jinsi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, chiqish_str, kirish_str)
+        )
+    for (mavjud_jins,) in rows:
+        if mavjud_jins and mavjud_jins != yangi_jins:
+            return mavjud_jins
+    return None
+
 def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False):
-    """
-    Agar toliq_xona=True bo'lsa (masalan 2 kishi 4 kishilik xonani to'liq olsa),
-    hisob-kitob xonaning to'liq sig'imi (4 kishi) bo'yicha hisoblanadi.
-    """
     sigim, bazaviy_narx = XONALAR[tomon][xona]
     hisob_odam = sigim if toliq_xona else odam_soni
     if tomon == "O'rtadagi":
