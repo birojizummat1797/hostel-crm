@@ -483,15 +483,15 @@ def chiroyli_kartochka(icon, title, value, bg_color):
         return (
             f"<div style='background: #141724; border: 1px solid #262b40; border-top: 4px solid {bg_color}; "
             f"padding: 16px; border-radius: 14px; color: #f8fafc; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
-            f"margin-bottom: 16px; font-family: sans-serif;'>"
+            f"margin-bottom: 18px; font-family: sans-serif;'>"
             f"<div style='font-size: 13px; color: #94a3b8; font-weight: 500; margin-bottom: 6px;'>{icon} {title}</div>"
             f"<div style='font-size: 22px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
         )
     return (
         f"<div style='background: linear-gradient(135deg, {bg_color} 0%, {bg_color}dd 100%); "
-        f"padding: 15px; border-radius: 12px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); "
-        f"margin-bottom: 20px; font-family: sans-serif;'>"
-        f"<div style='font-size: 13px; font-weight: 600; opacity: 0.95; margin-bottom: 5px;'>{icon} {title}</div>"
+        f"padding: 16px; border-radius: 14px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.12); "
+        f"margin-bottom: 18px; font-family: sans-serif;'>"
+        f"<div style='font-size: 13px; font-weight: 600; opacity: 0.95; margin-bottom: 6px;'>{icon} {title}</div>"
         f"<div style='font-size: 22px; font-weight: bold; color: white;'>{value}</div></div>"
     )
 
@@ -534,31 +534,85 @@ def rangla_jadval(row):
             return ['background-color: #f0fdf4; color: #15803d'] * len(row)
 
 def tema_css_yuklash(tema_nomi):
+    """
+    Professional UI/UX CSS:
+    - Modal oyna (st.dialog), tugmalar (st.button, st.download_button) va inputlar hech qachon oqarib ko'rinmay qolmaydi.
+    - Chap menyu (Sidebar) bo'limlari orasi ochiq, alohida-alohida kartochka-tugma ko'rinishida chiqadi.
+    - Barcha matnlar va bloklar orasida nafas oladigan masofa (spacing) ta'minlanadi.
+    """
+    umumiy_nav_css = (
+        ".block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important; }"
+        "h1, h2, h3 { letter-spacing: -0.3px; margin-bottom: 0.7rem !important; }"
+        "div[data-testid='stVerticalBlock'] > div { margin-bottom: 0.25rem; }"
+        # /* Chap menyudagi Asosiy Menyu radio tugmalarini zamonaviy alohida tugmalarga aylantirish */
+        "section[data-testid='stSidebar'] div[role='radiogroup'] { gap: 7px !important; }"
+        "section[data-testid='stSidebar'] div[role='radiogroup'] > label { "
+        "padding: 10px 14px !important; border-radius: 10px !important; width: 100% !important; "
+        "transition: all 0.2s ease !important; cursor: pointer !important; margin: 0 !important; "
+        "border: 1px solid rgba(148,163,184,0.18) !important; }"
+        "section[data-testid='stSidebar'] div[role='radiogroup'] > label > div:first-child { display: none !important; }"
+        "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { font-size: 14px !important; font-weight: 600 !important; margin: 0 !important; }"
+        "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) { "
+        "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; "
+        "border-color: #8b5cf6 !important; box-shadow: 0 4px 12px rgba(124,58,237,0.35) !important; }"
+        "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) p { color: #ffffff !important; }"
+    )
+
     if tema_nomi == "🌙 Qorong'u (Dark UI)":
         st.markdown(
             "<style>"
+            + umumiy_nav_css +
             ".stApp { background-color: #0b0d14; color: #f1f5f9; }"
             "section[data-testid='stSidebar'] { background-color: #111420 !important; border-right: 1px solid #1e2436; }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { background-color: #171b2b; }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { background-color: #1f253a; border-color: #4c1d95 !important; }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { color: #cbd5e1 !important; }"
             "div[data-testid='metric-container'] { background-color: #141724 !important; border: 1px solid #262b40 !important; padding: 16px 20px; border-radius: 14px; border-left: 5px solid #7c3aed !important; color: #f8fafc !important; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }"
             "div[data-testid='metric-container'] label { color: #94a3b8 !important; }"
             "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #ffffff !important; }"
-            ".stForm, div[data-testid='stExpander'] { background-color: #141724 !important; border: 1px solid #262b40 !important; border-radius: 14px !important; }"
-            "h1, h2, h3, h4, h5, p, span, label { color: #e2e8f0; }"
-            "button[kind='primary'] { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; }"
+            ".stForm, div[data-testid='stExpander'] { background-color: #141724 !important; border: 1px solid #262b40 !important; border-radius: 14px !important; padding: 14px !important; }"
+            ".stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label { color: #f1f5f9 !important; }"
+            # /* 4-SKRINSHOT TUZATISHI: Barcha oddiy va yuklab olish tugmalari qora-kulrang fonda aniq oq yozuv bilan chiqadi */
+            ".stButton > button, .stDownloadButton > button { "
+            "background-color: #1e2436 !important; color: #f8fafc !important; border: 1px solid #334155 !important; "
+            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; transition: all 0.2s !important; }"
+            ".stButton > button p, .stButton > button span, .stDownloadButton > button p, .stDownloadButton > button span { color: #f8fafc !important; }"
+            ".stButton > button:hover, .stDownloadButton > button:hover { background-color: #2b334d !important; border-color: #7c3aed !important; }"
+            # /* Primary tugmalar */
+            "button[kind='primary'], .stFormSubmitButton > button { "
+            "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; "
+            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
+            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
+            # /* 1-SKRINSHOT TUZATISHI: Modal oyna (st.dialog) foni va ichidagi yozuvlar */
+            "div[role='dialog'] { background-color: #141724 !important; color: #f8fafc !important; border: 1px solid #334155 !important; border-radius: 16px !important; }"
+            "div[role='dialog'] h1, div[role='dialog'] h2, div[role='dialog'] h3, div[role='dialog'] p, div[role='dialog'] label, div[role='dialog'] span { color: #f8fafc !important; }"
+            "div[role='dialog'] input { color: #0f172a !important; background-color: #f8fafc !important; }"
             "</style>",
             unsafe_allow_html=True
         )
     else:
         st.markdown(
             "<style>"
+            + umumiy_nav_css +
             ".stApp { background-color: #f8fafc; color: #0f172a; }"
             "section[data-testid='stSidebar'] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }"
-            "div[data-testid='metric-container'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; padding: 15px 20px; border-radius: 12px; border-left: 6px solid #4f46e5 !important; color: #0f172a !important; box-shadow: 2px 4px 12px rgba(0,0,0,0.05); }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { background-color: #f1f5f9; }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { background-color: #e2e8f0; border-color: #6366f1 !important; }"
+            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { color: #1e293b !important; }"
+            "div[data-testid='metric-container'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; padding: 16px 20px; border-radius: 14px; border-left: 6px solid #4f46e5 !important; color: #0f172a !important; box-shadow: 2px 4px 12px rgba(0,0,0,0.05); }"
             "div[data-testid='metric-container'] label { color: #475569 !important; }"
             "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #0f172a !important; }"
-            ".stForm, div[data-testid='stExpander'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 12px !important; }"
-            "h1, h2, h3, h4, h5, p, span, label { color: #0f172a; }"
-            "button[kind='primary'] { background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; border: none !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; }"
+            ".stForm, div[data-testid='stExpander'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 14px !important; padding: 14px !important; }"
+            ".stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label { color: #0f172a !important; }"
+            ".stButton > button, .stDownloadButton > button { "
+            "background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; "
+            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; }"
+            ".stButton > button p, .stDownloadButton > button p { color: #0f172a !important; }"
+            ".stButton > button:hover, .stDownloadButton > button:hover { background-color: #f1f5f9 !important; border-color: #4f46e5 !important; }"
+            "button[kind='primary'], .stFormSubmitButton > button { "
+            "background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; border: none !important; "
+            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
+            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
             "</style>",
             unsafe_allow_html=True
         )
