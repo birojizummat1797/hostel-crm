@@ -51,27 +51,40 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tug
         df_tol = db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana=?", (bugungi_sana,))
         df_xar = db.read_df("SELECT * FROM xarajatlar WHERE sana=?", (bugungi_sana,))
 
-        naqd_tushum = df_tol[df_tol['tolov_tafsiloti'] == 'Naqd']['summa'].sum() if not df_tol.empty else 0
-        karta_tushum = df_tol[df_tol['tolov_tafsiloti'] != 'Naqd']['summa'].sum() if not df_tol.empty else 0
-        naqd_xarajat = df_xar[df_xar['tolov_turi'] == 'Naqd']['summa'].sum() if not df_xar.empty else 0
-        umumiy_xarajat = df_xar['summa'].sum() if not df_xar.empty else 0
-        sof_naqd_kassa = naqd_tushum - naqd_xarajat
+        naqd_tushum = float(df_tol[df_tol['tolov_tafsiloti'] == 'Naqd']['summa'].fillna(0).sum()) if not df_tol.empty else 0.0
+        karta_tushum = float(df_tol[df_tol['tolov_tafsiloti'] != 'Naqd']['summa'].fillna(0).sum()) if not df_tol.empty else 0.0
+        jami_tushum = naqd_tushum + karta_tushum
 
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("💵 Bugungi Naqd Kirim", f"{naqd_tushum:,.0f} UZS")
-        k2.metric("💳 Bugungi Karta/Onlayn", f"{karta_tushum:,.0f} UZS")
-        k3.metric("➖ Jami Xarajatlar", f"{umumiy_xarajat:,.0f} UZS")
-        k4.metric("🏦 Kassadagi Sof Naqd", f"{sof_naqd_kassa:,.0f} UZS")
+        naqd_xarajat = float(df_xar[df_xar['tolov_turi'] == 'Naqd']['summa'].fillna(0).sum()) if not df_xar.empty else 0.0
+        karta_xarajat = float(df_xar[df_xar['tolov_turi'] != 'Naqd']['summa'].fillna(0).sum()) if not df_xar.empty else 0.0
+        umumiy_xarajat = naqd_xarajat + karta_xarajat
+
+        sof_naqd_kassa = naqd_tushum - naqd_xarajat
+        sof_karta_kassa = karta_tushum - karta_xarajat
+        umumiy_sof_balans = jami_tushum - umumiy_xarajat
+
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("💵 Naqd Kirim", f"{naqd_tushum:,.0f} UZS", f"Xarajat: -{naqd_xarajat:,.0f}")
+        k2.metric("💳 Karta/Onlayn Kirim", f"{karta_tushum:,.0f} UZS", f"Xarajat: -{karta_xarajat:,.0f}")
+        k3.metric("🏦 Sof Naqd Qoldiq", f"{sof_naqd_kassa:,.0f} UZS")
+        k4.metric("💳 Sof Karta/Onlayn", f"{sof_karta_kassa:,.0f} UZS")
+        k5.metric("💰 Umumiy Sof Balans", f"{umumiy_sof_balans:,.0f} UZS")
 
         with st.form("smena_form", clear_on_submit=True, enter_to_submit=False):
             smena_izoh = st.text_area("Smena bo'yicha izoh (ixtiyoriy):", placeholder="Smena tinch o'tdi, kalitlar va kassa topshirildi...")
             if st.form_submit_button("✅ Smenani yopish va Hisobotga saqlash", type="primary", use_container_width=True):
                 hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
+                izoh_toliq = f"[Sof Naqd: {sof_naqd_kassa:,.0f} | Sof Karta: {sof_karta_kassa:,.0f}] {smena_izoh.strip()}".strip()
                 db.execute(
                     "INSERT INTO smenalar (vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh) VALUES (?,?,?,?,?,?,?)",
-                    (hozir, xodim_ismi, naqd_tushum, karta_tushum, umumiy_xarajat, sof_naqd_kassa, smena_izoh.strip())
+                    (hozir, xodim_ismi, naqd_tushum, karta_tushum, umumiy_xarajat, umumiy_sof_balans, izoh_toliq)
                 )
-                jurnalga_yozish("Smena (Z-Hisobot)", xodim_ismi, "Smena yopildi", f"Sof naqd: {sof_naqd_kassa:,.0f}, Karta: {karta_tushum:,.0f}, Xarajat: {umumiy_xarajat:,.0f}")
+                jurnalga_yozish(
+                    "Smena (Z-Hisobot)",
+                    xodim_ismi,
+                    "Smena yopildi",
+                    f"Naqd kirim: {naqd_tushum:,.0f}, Karta kirim: {karta_tushum:,.0f}, Xarajat: {umumiy_xarajat:,.0f}, Sof Naqd: {sof_naqd_kassa:,.0f}, Umumiy Sof: {umumiy_sof_balans:,.0f}"
+                )
                 st.success("🎉 Smena muvaffaqiyatli yopildi va bazaga saqlandi!")
                 st.rerun()
 
@@ -102,9 +115,9 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tug
         st.markdown("---")
         st.markdown(f"##### 🔄 Topshirilgan Smenalar ({len(df_s)} ta)")
         if not df_s.empty:
-            df_s.columns = ["Vaqt", "Xodim", "Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa", "Izoh"]
-            for col in ["Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa"]:
-                df_s[col] = df_s[col].apply(lambda x: f"{int(x):,} UZS")
+            df_s.columns = ["Vaqt", "Xodim", "Naqd Kirim", "Karta Kirim", "Jami Xarajat", "Umumiy Sof Balans", "Izoh"]
+            for col in ["Naqd Kirim", "Karta Kirim", "Jami Xarajat", "Umumiy Sof Balans"]:
+                df_s[col] = df_s[col].apply(lambda x: f"{int(x or 0):,} UZS")
             st.dataframe(df_s, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_s))
         else:
             st.info("Tanlangan davrda smenalar yopilmagan.")
@@ -142,14 +155,18 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
 
         df_h_ombor = db.read_df("SELECT nomi, hajmi, kategoriya, tannarx, narxi, qoldiq FROM mahsulotlar ORDER BY qoldiq ASC")
 
-        jami_savdo_sum = df_h_savdo['jami_summa'].fillna(0).sum() if not df_h_savdo.empty else 0
-        jami_xarajat_sum = df_h_xarajat['summa'].fillna(0).sum() if not df_h_xarajat.empty else 0
-        ombor_qiymati = (df_h_ombor['narxi'].fillna(0) * df_h_ombor['qoldiq'].fillna(0)).sum() if not df_h_ombor.empty else 0
+        jami_savdo_sum = float(df_h_savdo['jami_summa'].fillna(0).sum()) if not df_h_savdo.empty else 0.0
+        darhol_savdo_sum = float(df_h_savdo[df_h_savdo['tolov_turi'] == 'Darhol']['jami_summa'].fillna(0).sum()) if not df_h_savdo.empty else 0.0
+        qarzga_savdo_sum = float(df_h_savdo[df_h_savdo['tolov_turi'] == 'Xona']['jami_summa'].fillna(0).sum()) if not df_h_savdo.empty else 0.0
+        market_sof_foyda = float(df_h_savdo['sof_foyda'].fillna(0).sum()) if (not df_h_savdo.empty and 'sof_foyda' in df_h_savdo.columns) else 0.0
+        jami_xarajat_sum = float(df_h_xarajat['summa'].fillna(0).sum()) if not df_h_xarajat.empty else 0.0
+        ombor_qiymati = float((df_h_ombor['narxi'].fillna(0) * df_h_ombor['qoldiq'].fillna(0)).sum()) if not df_h_ombor.empty else 0.0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric(f"🛒 Davr ichida Market Savdosi ({len(df_h_savdo)} ta)", f"{jami_savdo_sum:,.0f} UZS")
-        m2.metric(f"➖ Davr ichida Mayda Xarajatlar ({len(df_h_xarajat)} ta)", f"{jami_xarajat_sum:,.0f} UZS")
-        m3.metric("📦 Hozirgi Skladdagi Tovarlar Qiymati", f"{ombor_qiymati:,.0f} UZS")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(f"🛒 Jami Market Savdo ({len(df_h_savdo)} ta)", f"{jami_savdo_sum:,.0f} UZS", f"Kassaga: {darhol_savdo_sum:,.0f} | Qarzga: {qarzga_savdo_sum:,.0f}")
+        m2.metric("📈 Market Sof Foydasi (Marja)", f"{market_sof_foyda:,.0f} UZS")
+        m3.metric(f"➖ Mayda Xarajatlar ({len(df_h_xarajat)} ta)", f"{jami_xarajat_sum:,.0f} UZS")
+        m4.metric("📦 Skladdagi Tovarlar Qiymati", f"{ombor_qiymati:,.0f} UZS")
 
         st.download_button(
             label=f"📥 Tanlangan davr ({g_davr_nomi}) bo'yicha To'liq Hisobotni Yuklab Olish (Excel)",
@@ -163,9 +180,14 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
         st.markdown("---")
         st.markdown(f"##### 🛒 Market Savdolari ({g_davr_nomi})")
         if not df_h_savdo.empty:
-            df_hs_view = df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
-            df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Xodim"]
-            df_hs_view["Jami Summa"] = df_hs_view["Jami Summa"].apply(lambda x: f"{int(x):,} UZS")
+            ustunlar_s = ['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'sof_foyda', 'tolov_tafsiloti', 'xodim'] if 'sof_foyda' in df_h_savdo.columns else ['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']
+            df_hs_view = df_h_savdo[ustunlar_s].copy()
+            if 'sof_foyda' in df_hs_view.columns:
+                df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "Sof Foyda", "To'lov Turi", "Xodim"]
+                df_hs_view["Sof Foyda"] = df_hs_view["Sof Foyda"].fillna(0).apply(lambda x: f"{int(x):,} UZS")
+            else:
+                df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Xodim"]
+            df_hs_view["Jami Summa"] = df_hs_view["Jami Summa"].fillna(0).apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(df_hs_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_hs_view))
         else:
             st.info("Tanlangan davrda savdo bo'lmagan.")
@@ -206,7 +228,8 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
                 st.info("Hozircha faol mijozlar yo'q.")
 
             st.markdown("---")
-            st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar — {g_davr_nomi} ({len(arxivdagilar)} ta)")
+            arx_odam_jami = int(arxivdagilar['odam_soni'].fillna(1).sum()) if not arxivdagilar.empty else 0
+            st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar — {g_davr_nomi} ({arx_odam_jami} kishi / {len(arxivdagilar)} ta bron)")
             if not arxivdagilar.empty:
                 arx_view = arxivdagilar[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'sana', 'chiqish_sanasi', 'izoh']].copy()
                 arx_view.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Izoh"]

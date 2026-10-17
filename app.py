@@ -305,11 +305,16 @@ def xonadagi_band_krovatlar(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id
             (xona_nomi, chiqish_str, kirish_str)
         )
     band_map = {}
+    sigim = xona_sigimini_ol(xona_nomi)
     for m_ism, x_tur, iz in rows:
         birikma = f"{x_tur or ''} {iz or ''}"
-        topildi = re.findall(r'(\d)-joy', birikma)
-        for j_raqam in topildi:
-            band_map[int(j_raqam)] = m_ism
+        if "Barcha joylar" in birikma or "To'liq band" in birikma:
+            for j_i in range(1, sigim + 1):
+                band_map[j_i] = m_ism
+        else:
+            topildi = re.findall(r'(\d)-joy', birikma)
+            for j_raqam in topildi:
+                band_map[int(j_raqam)] = m_ism
     return band_map
 
 def krovat_nomini_ajrat(xona_turi_str, izoh_str=""):
@@ -363,7 +368,7 @@ if not st.session_state.logged_in:
 avto_checkout_tekshir()
 
 # ==========================================
-# 2. ZAMONAVIY MENYU BAR (RADIO NUQTALARSIZ, TO'LIQ TUGMALI SIDEBAR!)
+# 2. ZAMONAVIY MENYU BAR (TUGMALI SIDEBAR)
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
@@ -555,20 +560,6 @@ def render_qabul_formasi(form_key_suffix="main"):
                 xona_sigimi = tanlangan_xona_sigim
                 bazaviy_tur = "Dvuxspalniy" if tomon == "O'rtadagi" else ("2 alohida krovat" if xona_sigimi == 2 else f"{xona_sigimi} kishilik")
                 
-                if tomon != "O'rtadagi" and not toliq_band_vikup:
-                    yon_qisqa = "Chapdan" if "Chapdan" in joy_yonalish else "O'ngdan"
-                    if tanlangan_krovatlar:
-                        joy_raqamlar = ", ".join([k.split(" (")[0] for k in tanlangan_krovatlar])
-                    else:
-                        joy_raqamlar = "1-joy"
-                    krovat_yorliq = f"{yon_qisqa} {joy_raqamlar}"
-                elif toliq_band_vikup and tomon != "O'rtadagi":
-                    krovat_yorliq = f"Barcha joylar (1-{xona_sigimi}-joy)"
-                else:
-                    krovat_yorliq = "Dvuxspalniy"
-
-                xona_turi_matn = f"To'liq band ({bazaviy_tur}) [🛏️ {krovat_yorliq}]" if (toliq_band_vikup or tomon == "O'rtadagi") else f"{bazaviy_tur} [🛏️ {krovat_yorliq}]"
-                
                 chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
                 kirish_str = kirish_sanasi.strftime("%Y-%m-%d")
                 chiqish_str = chiqish_sanasi.strftime("%Y-%m-%d")
@@ -577,7 +568,8 @@ def render_qabul_formasi(form_key_suffix="main"):
                 bosh_joy = xona_sigimi - band
                 kerakli_joy = xona_sigimi if toliq_band_vikup else odam_soni
                 zid_jins = None if (toliq_band_vikup or tomon == "O'rtadagi") else xona_jinsini_tekshir(xona, kirish_str, chiqish_str, jinsi)
-                
+                tanlangan_band_joylar = [k for k in tanlangan_krovatlar if "🔴 Band" in k]
+
                 if odam_soni > xona_sigimi:
                     st.error(f"⚠️ {xona} sig'imi {xona_sigimi} kishilik! Siz {odam_soni} kishi kiritdingiz.")
                 elif toliq_band_vikup and band > 0:
@@ -586,7 +578,22 @@ def render_qabul_formasi(form_key_suffix="main"):
                     st.error(f"⚠️ Xatolik: {xona} da tanlangan sanalar uchun bo'sh o'rin yetarli emas (Bo'sh o'rin: {bosh_joy} ta)!")
                 elif zid_jins:
                     st.error(f"🚻 Xatolik: {xona} da tanlangan sanalarda **{zid_jins}** mehmon(lar) joylashgan! Umumiy xonaga **{jinsi}** mehmonni qo'shib bo'lmaydi.")
+                elif tomon != "O'rtadagi" and not toliq_band_vikup and tanlangan_band_joylar:
+                    st.error(f"⚠️ Siz allaqachon band qilingan yotoq o'rnini tanladingiz: {', '.join(tanlangan_band_joylar)}. Iltimos, 🟢 Bo'sh joyni tanlang!")
+                elif tomon != "O'rtadagi" and not toliq_band_vikup and odam_soni < xona_sigimi and len(tanlangan_krovatlar) != odam_soni:
+                    st.error(f"⚠️ Siz **{odam_soni} nafar** mehmon kiritdingiz, iltimos ular uchun aynan **{odam_soni} ta** yotoq o'rnini (krovatni) belgilang! (Hozir {len(tanlangan_krovatlar)} ta tanlangan)")
                 else:
+                    if tomon == "O'rtadagi":
+                        krovat_yorliq = "Dvuxspalniy"
+                    elif toliq_band_vikup or odam_soni == xona_sigimi:
+                        krovat_yorliq = f"Barcha joylar (1-{xona_sigimi}-joy)"
+                    else:
+                        yon_qisqa = "Chapdan" if "Chapdan" in joy_yonalish else "O'ngdan"
+                        joy_raqamlar = ", ".join([k.split(" (")[0] for k in tanlangan_krovatlar])
+                        krovat_yorliq = f"{yon_qisqa} {joy_raqamlar}"
+
+                    xona_turi_matn = f"To'liq band ({bazaviy_tur}) [🛏️ {krovat_yorliq}]" if (toliq_band_vikup or tomon == "O'rtadagi") else f"{bazaviy_tur} [🛏️ {krovat_yorliq}]"
+
                     kunlik_stavka, standart_jami = dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=toliq_band_vikup)
                     if maxsus_kunlik > 0:
                         kunlik_stavka = maxsus_kunlik
@@ -645,7 +652,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                         f"⚠️ <b>Qoldiq qarz:</b> {max(0, qoldiq):,.0f} UZS",
                         xodim_ismi, muhim=maxsus_belgi
                     )
-                    st.success(f"✅ Mehmon ({mijoz_ism}) {xona} ({krovat_yorliq}) ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
+                    st.success(f"✅ Mehmon ({mijoz_ism} — {odam_soni} kishi) {xona} ({krovat_yorliq}) ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
                     st.rerun()
 
 if hasattr(st, "dialog"):
@@ -657,7 +664,7 @@ else:
         pass
 
 # ====================================================
-# SAHIFA 1: 🏠 BOSHQARUV PANELI
+# SAHIFA 1: 🏠 BOSHQARUV PANELI (100% ANIQ MATEMATIKA BILAN!)
 # ====================================================
 if sahifa == "🏠 Boshqaruv paneli":
     hafta_kunlari_uz = ["dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba"]
@@ -672,27 +679,34 @@ if sahifa == "🏠 Boshqaruv paneli":
     df_xarajat = db.read_df("SELECT * FROM xarajatlar")
     tozalik_map = barcha_xona_tozalik_ol()
 
-    if 'tolagan_summa' in df_barcha.columns:
+    if not df_barcha.empty:
         df_barcha['tolagan_summa'] = df_barcha['tolagan_summa'].fillna(0)
-    if 'qoldiq' in df_barcha.columns:
         df_barcha['qoldiq'] = df_barcha['qoldiq'].fillna(0)
+        df_barcha['odam_soni'] = df_barcha['odam_soni'].fillna(1).astype(int)
 
     jami_xonalar_soni = 36
     faol_df = df_barcha[(df_barcha['holat'] != 'Chiqib ketgan') & (df_barcha['kirish_sanasi'] <= bugungi_sana) & (df_barcha['chiqish_sanasi'] > bugungi_sana)] if not df_barcha.empty else pd.DataFrame()
     band_xonalar_set = set(faol_df['xona'].unique()) if not faol_df.empty else set()
     band_xonalar_soni = len(band_xonalar_set)
+    faol_mehmon_odam_soni = int(faol_df['odam_soni'].sum()) if not faol_df.empty else 0
     bandlik_foiz = int(round((band_xonalar_soni / jami_xonalar_soni) * 100))
 
     tozalash_kerak_soni = sum(1 for x, h in tozalik_map.items() if h == "Tozalash kerak" and x not in band_xonalar_set)
     bosh_toza_xonalar_soni = max(0, jami_xonalar_soni - band_xonalar_soni - tozalash_kerak_soni)
 
+    # BUGUNGI KIRISHLAR: HAQIQIY ODAMLAR YIG'INDISI VA BRONLAR SONI
     bugungi_kirishlar_df = df_barcha[(df_barcha['kirish_sanasi'] == bugungi_sana) & (df_barcha['holat'] != 'Chiqib ketgan')] if not df_barcha.empty else pd.DataFrame()
-    hali_kirmagan_soni = len(bugungi_kirishlar_df[bugungi_kirishlar_df['bron_turi'] == 'Bron']) if not bugungi_kirishlar_df.empty else 0
+    bugun_kirgan_odam_soni = int(bugungi_kirishlar_df['odam_soni'].sum()) if not bugungi_kirishlar_df.empty else 0
+    bugun_kirgan_bron_soni = len(bugungi_kirishlar_df)
+    hali_kirmagan_odam_soni = int(bugungi_kirishlar_df[bugungi_kirishlar_df['bron_turi'] == 'Bron']['odam_soni'].sum()) if not bugungi_kirishlar_df.empty else 0
 
+    # BUGUNGI CHIQISHLAR: HAQIQIY ODAMLAR YIG'INDISI VA BRONLAR SONI
     bugungi_chiqishlar_df = df_barcha[df_barcha['chiqish_sanasi'] == bugungi_sana] if not df_barcha.empty else pd.DataFrame()
-    hali_chiqmagan_soni = len(bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan']) if not bugungi_chiqishlar_df.empty else 0
+    bugun_chiqish_odam_soni = int(bugungi_chiqishlar_df['odam_soni'].sum()) if not bugungi_chiqishlar_df.empty else 0
+    bugun_chiqish_bron_soni = len(bugungi_chiqishlar_df)
+    hali_chiqmagan_odam_soni = int(bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan']['odam_soni'].sum()) if not bugungi_chiqishlar_df.empty else 0
 
-    bugungi_tushum_sum = df_tolovlar[df_tolovlar['sana'] == bugungi_sana]['summa'].fillna(0).sum() if not df_tolovlar.empty else 0
+    bugungi_tushum_sum = float(df_tolovlar[df_tolovlar['sana'] == bugungi_sana]['summa'].fillna(0).sum()) if not df_tolovlar.empty else 0.0
 
     card_bg = "#141724" if is_dark else "#ffffff"
     card_border = "#262b40" if is_dark else "#cbd5e1"
@@ -705,7 +719,7 @@ if sahifa == "🏠 Boshqaruv paneli":
             f"<div style='background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); padding: 20px; border-radius: 16px; color: white; box-shadow: 0 8px 20px rgba(124,58,237,0.3);'>"
             f"<div style='font-size: 14px; color: white;'>Band xonalar</div>"
             f"<div style='font-size: 32px; font-weight: 800; color: white; margin: 6px 0;'>{band_xonalar_soni} <span style='font-size: 20px; color: white; opacity: 0.85;'>/ {jami_xonalar_soni}</span></div>"
-            f"<div style='font-size: 13px; color: white; margin-bottom: 8px;'>{bandlik_foiz}% bandlik ko'rsatkichi</div>"
+            f"<div style='font-size: 13px; color: white; margin-bottom: 8px;'>{bandlik_foiz}% bandlik • Jami {faol_mehmon_odam_soni} kishi</div>"
             f"<div style='background: rgba(255,255,255,0.25); height: 6px; border-radius: 4px; width: 100%;'>"
             f"<div style='background: #ffffff; height: 6px; border-radius: 4px; width: {bandlik_foiz}%;'></div></div></div>",
             unsafe_allow_html=True
@@ -713,17 +727,17 @@ if sahifa == "🏠 Boshqaruv paneli":
     with oc2:
         st.markdown(
             f"<div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>"
-            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi kirishlar</div>"
-            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_kirishlar_df)}</div>"
-            f"<div style='font-size: 13px; color: {text_sub};'>{hali_kirmagan_soni} tasi kutilmoqda (Bron)</div></div>",
+            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi kirishlar (Mehmon soni)</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{bugun_kirgan_odam_soni} <span style='font-size: 18px; font-weight: 600; opacity: 0.8;'>kishi</span></div>"
+            f"<div style='font-size: 13px; color: {text_sub};'>{bugun_kirgan_bron_soni} ta bron ({hali_kirmagan_odam_soni} kishi kutilmoqda)</div></div>",
             unsafe_allow_html=True
         )
     with oc3:
         st.markdown(
             f"<div style='background: {card_bg}; border: 1px solid {card_border}; padding: 20px; border-radius: 16px;'>"
-            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi chiqishlar</div>"
-            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{len(bugungi_chiqishlar_df)}</div>"
-            f"<div style='font-size: 13px; color: {text_sub};'>{hali_chiqmagan_soni} tasi xonani topshirmagan</div></div>",
+            f"<div style='font-size: 14px; color: {text_sub};'>Bugungi chiqishlar (Mehmon soni)</div>"
+            f"<div style='font-size: 32px; font-weight: 800; color: {text_main}; margin: 6px 0;'>{bugun_chiqish_odam_soni} <span style='font-size: 18px; font-weight: 600; opacity: 0.8;'>kishi</span></div>"
+            f"<div style='font-size: 13px; color: {text_sub};'>{bugun_chiqish_bron_soni} ta bron ({hali_chiqmagan_odam_soni} kishi topshirmagan)</div></div>",
             unsafe_allow_html=True
         )
     with oc4:
@@ -737,8 +751,8 @@ if sahifa == "🏠 Boshqaruv paneli":
 
     st.write("")
     with st.container(border=True):
-        st.markdown("##### 🛎️ Bugungi kirish va chiqish amaliyotlari")
         faol_chiqishlar = bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan'] if not bugungi_chiqishlar_df.empty else pd.DataFrame()
+        st.markdown(f"##### 🛎️ Bugungi kirish ({bugun_kirgan_odam_soni} kishi / {bugun_kirgan_bron_soni} ta bron) va chiqish ({hali_chiqmagan_odam_soni} kishi) amaliyotlari")
         if bugungi_kirishlar_df.empty and faol_chiqishlar.empty:
             st.caption("Bugun uchun rejalashtirilgan kirish yoki chiqish amaliyotlari mavjud emas.")
         else:
@@ -751,7 +765,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                     ck1, ck2 = st.columns([5.5, 1.3])
                     ck1.markdown(
                         f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #f59e0b; font-size:13.5px;'>"
-                        f"🟠 <b>{k_row['mijoz']}</b> ({k_row['odam_soni']} kishi) &nbsp;—&nbsp; <span style='opacity:0.85;'>Bron kelishi • <b>{k_row['xona']}</b>{joy_b}</span></div>",
+                        f"🟠 <b>{k_row['mijoz']}</b> (<b>{k_row['odam_soni']} kishi</b>) &nbsp;—&nbsp; <span style='opacity:0.85;'>Bron kelishi • <b>{k_row['xona']}</b>{joy_b}</span></div>",
                         unsafe_allow_html=True
                     )
                     if ck2.button("🔑 Check-in", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
@@ -761,7 +775,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                 else:
                     st.markdown(
                         f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #22c55e; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:13.5px;'>"
-                        f"<div>🟢 <b>{k_row['mijoz']}</b> ({k_row['odam_soni']} kishi) &nbsp;—&nbsp; <span style='opacity:0.85;'>Kelish ({soat_k}) • <b>{k_row['xona']}</b>{joy_b}</span></div>"
+                        f"<div>🟢 <b>{k_row['mijoz']}</b> (<b>{k_row['odam_soni']} kishi</b>) &nbsp;—&nbsp; <span style='opacity:0.85;'>Kelish ({soat_k}) • <b>{k_row['xona']}</b>{joy_b}</span></div>"
                         f"<span style='background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid #22c55e; padding:3px 12px; border-radius:20px; font-size:12px; font-weight:700;'>✔ Joylashgan</span>"
                         f"</div>",
                         unsafe_allow_html=True
@@ -774,7 +788,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                 cc1, cc2 = st.columns([5.5, 1.3])
                 cc1.markdown(
                     f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #eab308; font-size:13.5px;'>"
-                    f"🟡 <b>{ch_row['mijoz']}</b> ({ch_row['odam_soni']} kishi{qarz_b}) &nbsp;—&nbsp; <span style='opacity:0.85;'>Ketish (12:00) • <b>{ch_row['xona']}</b>{joy_b}</span></div>",
+                    f"🟡 <b>{ch_row['mijoz']}</b> (<b>{ch_row['odam_soni']} kishi</b>{qarz_b}) &nbsp;—&nbsp; <span style='opacity:0.85;'>Ketish (12:00) • <b>{ch_row['xona']}</b>{joy_b}</span></div>",
                     unsafe_allow_html=True
                 )
                 if ch_row['qoldiq'] <= 0:
@@ -789,9 +803,9 @@ if sahifa == "🏠 Boshqaruv paneli":
     with st.container(border=True):
         st.markdown("##### 🛏️ Xonalar fondining joriy holati")
         xh1, xh2, xh3 = st.columns(3, gap="medium")
-        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{band_xonalar_soni}</div><div style='font-size:13px; color:#a78bfa; font-weight:600;'>● Band xonalar</div></div>", unsafe_allow_html=True)
-        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{bosh_toza_xonalar_soni}</div><div style='font-size:13px; color:#4ade80; font-weight:600;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
-        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{tozalash_kerak_soni}</div><div style='font-size:13px; color:#f87171; font-weight:600;'>● Tozalash talab etiladi</div></div>", unsafe_allow_html=True)
+        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{band_xonalar_soni} ta <span style='font-size:14px; font-weight:500; opacity:0.8;'>({faol_mehmon_odam_soni} kishi)</span></div><div style='font-size:13px; color:#a78bfa; font-weight:600;'>● Band xonalar</div></div>", unsafe_allow_html=True)
+        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{bosh_toza_xonalar_soni} ta</div><div style='font-size:13px; color:#4ade80; font-weight:600;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
+        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{tozalash_kerak_soni} ta</div><div style='font-size:13px; color:#f87171; font-weight:600;'>● Tozalash talab etiladi</div></div>", unsafe_allow_html=True)
 
         st.write("")
         st.markdown("##### 📊 Yaqin 7 kunlik bandlik prognozi")
@@ -805,14 +819,16 @@ if sahifa == "🏠 Boshqaruv paneli":
             if not df_barcha.empty:
                 d_band_df = df_barcha[(df_barcha['holat'] != 'Chiqib ketgan') & (df_barcha['kirish_sanasi'] <= d_str) & (df_barcha['chiqish_sanasi'] > d_str)]
                 d_band_xonalar = len(set(d_band_df['xona'].unique()))
+                d_band_odam = int(d_band_df['odam_soni'].sum())
             else:
                 d_band_xonalar = 0
+                d_band_odam = 0
             d_foiz = int(round((d_band_xonalar / jami_xonalar_soni) * 100))
             bar_color = "#8b5cf6" if i == 0 else "#6366f1"
             with bar_cols[i]:
                 st.markdown(
                     f"<div style='text-align: center;'>"
-                    f"<div style='font-size: 12px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px;'>{d_foiz}%</div>"
+                    f"<div style='font-size: 12px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px;'>{d_foiz}% ({d_band_odam}k)</div>"
                     f"<div style='height: 100px; width: 34px; background: rgba(124,58,237,0.15); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
                     f"<div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div></div>"
                     f"<div style='font-size: 13px; margin-top: 6px; color: {text_main}; font-weight: 600;'>{k_nom} ({d_obj.strftime('%d.%m')})</div></div>",
@@ -822,29 +838,31 @@ if sahifa == "🏠 Boshqaruv paneli":
     st.markdown("---")
     st.subheader(f"💰 Moliya va Kassa Hisoboti — {g_davr_nomi}")
 
+    # MOLIYA VA KASSA BALANSINI TIYINIGACHA SINXRON HISOBLASH
     if g_bosh_sana and g_tugash_sana:
         df_tol_filtr = df_tolovlar[(df_tolovlar['sana'] >= g_bosh_sana) & (df_tolovlar['sana'] <= g_tugash_sana)] if not df_tolovlar.empty else pd.DataFrame()
-        df_sav_filtr = df_savdolar[(df_savdolar['sana'] >= g_bosh_sana) & (df_savdolar['sana'] <= g_tugash_sana)] if not df_savdolar.empty else pd.DataFrame()
         df_xar_filtr = df_xarajat[(df_xarajat['sana'] >= g_bosh_sana) & (df_xarajat['sana'] <= g_tugash_sana)] if not df_xarajat.empty else pd.DataFrame()
-        umumiy_kassa_yotoq = df_tol_filtr[df_tol_filtr['manba'] != 'Market Savdo']['summa'].fillna(0).sum() if not df_tol_filtr.empty else 0
     else:
         df_tol_filtr = df_tolovlar
-        df_sav_filtr = df_savdolar
         df_xar_filtr = df_xarajat
-        umumiy_kassa_yotoq = df_barcha['tolagan_summa'].sum() if not df_barcha.empty else 0
 
-    faol_odam_soni = int(faol_df['odam_soni'].fillna(1).sum()) if not faol_df.empty else 0
-    umumiy_kassa_market = df_sav_filtr[df_sav_filtr['tolov_turi'] == 'Darhol']['jami_summa'].fillna(0).sum() if not df_sav_filtr.empty else 0
-    jami_xarajatlar = df_xar_filtr['summa'].fillna(0).sum() if not df_xar_filtr.empty else 0
-    umumiy_qarz = df_barcha[(df_barcha['qoldiq'] > 0) & (df_barcha['holat'] != 'Chiqib ketgan')]['qoldiq'].sum() if not df_barcha.empty else 0
+    if not df_tol_filtr.empty:
+        umumiy_kassa_yotoq = float(df_tol_filtr[df_tol_filtr['manba'] != 'Market Savdo']['summa'].fillna(0).sum())
+        umumiy_kassa_market = float(df_tol_filtr[df_tol_filtr['manba'] == 'Market Savdo']['summa'].fillna(0).sum())
+    else:
+        umumiy_kassa_yotoq = 0.0
+        umumiy_kassa_market = 0.0
+
+    jami_xarajatlar = float(df_xar_filtr['summa'].fillna(0).sum()) if not df_xar_filtr.empty else 0.0
+    umumiy_qarz = float(df_barcha[(df_barcha['qoldiq'] > 0) & (df_barcha['holat'] != 'Chiqib ketgan')]['qoldiq'].sum()) if not df_barcha.empty else 0.0
     sof_balans = (umumiy_kassa_yotoq + umumiy_kassa_market) - jami_xarajatlar
 
     c1, c2, c3, c4, c5, c6 = st.columns(6, gap="small")
-    with c1: st.markdown(chiroyli_kartochka("👥", "Faol Mehmon", f"{faol_odam_soni} kishi", "#8b5cf6"), unsafe_allow_html=True)
-    with c2: st.markdown(chiroyli_kartochka("💰", "Yotoq Tushum", f"{umumiy_kassa_yotoq:,.0f}", "#f59e0b"), unsafe_allow_html=True)
-    with c3: st.markdown(chiroyli_kartochka("🛒", "Market Savdo", f"{umumiy_kassa_market:,.0f}", "#10b981"), unsafe_allow_html=True)
+    with c1: st.markdown(chiroyli_kartochka("👥", "Faol Mehmon", f"{faol_mehmon_odam_soni} kishi ({len(faol_df)} bron)", "#8b5cf6"), unsafe_allow_html=True)
+    with c2: st.markdown(chiroyli_kartochka("💰", "Yotoq Kirim", f"{umumiy_kassa_yotoq:,.0f}", "#f59e0b"), unsafe_allow_html=True)
+    with c3: st.markdown(chiroyli_kartochka("🛒", "Market Kirim", f"{umumiy_kassa_market:,.0f}", "#10b981"), unsafe_allow_html=True)
     with c4: st.markdown(chiroyli_kartochka("➖", "Xarajatlar", f"{jami_xarajatlar:,.0f}", "#64748b"), unsafe_allow_html=True)
-    with c5: st.markdown(chiroyli_kartochka("🏦", "Sof Balans", f"{sof_balans:,.0f}", "#2563eb"), unsafe_allow_html=True)
+    with c5: st.markdown(chiroyli_kartochka("🏦", "Sof Kassa Balans", f"{sof_balans:,.0f}", "#2563eb"), unsafe_allow_html=True)
     with c6: st.markdown(chiroyli_kartochka("⚠️", "Joriy Qarzlar", f"{umumiy_qarz:,.0f}", "#ef4444"), unsafe_allow_html=True)
 
     if not df_tol_filtr.empty or not df_xar_filtr.empty:
@@ -860,11 +878,11 @@ if sahifa == "🏠 Boshqaruv paneli":
         barcha_turlar = sorted(list(set(list(kirim_gr.keys()) + list(chiqim_gr.keys()))))
         
         asosiy_list, boshqa_list = [], []
-        boshqa_kirim_jami, boshqa_chiqim_jami = 0, 0
+        boshqa_kirim_jami, boshqa_chiqim_jami = 0.0, 0.0
         
         for tur in barcha_turlar:
-            k_s = kirim_gr.get(tur, 0)
-            c_s = chiqim_gr.get(tur, 0)
+            k_s = float(kirim_gr.get(tur, 0))
+            c_s = float(chiqim_gr.get(tur, 0))
             if tur in standart_kassalar:
                 asosiy_list.append((tur, k_s, c_s, k_s - c_s))
             else:
@@ -1005,7 +1023,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                     kun_df = pd.DataFrame()
                 
                 band_x_c = len(kun_df['xona'].unique()) if not kun_df.empty else 0
-                jami_m_c = int(kun_df['odam_soni'].sum()) if not kun_df.empty else 0
+                jami_m_c = int(kun_df['odam_soni'].fillna(1).sum()) if not kun_df.empty else 0
                 
                 if kun_df.empty:
                     ro_html = "<div style='color:#4ade80 !important; margin-top:6px; font-weight:600;'>🟢 Barcha 36 ta xona bo'sh</div>"
@@ -1015,7 +1033,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                         m_n = str(kr['mijoz']).replace("<", "").replace(">", "").replace("'", "`")
                         j_inf = krovat_nomini_ajrat(kr.get('xona_turi', ''), kr.get('izoh', ''))
                         j_txt = f" ({j_inf})" if j_inf else ""
-                        qatorlar_list.append(f"<div style='padding:4px 0; border-bottom:1px solid #1e293b;'>🛏️ <b>{kr['xona']}</b>{j_txt}: {m_n} ({kr['odam_soni']}k)</div>")
+                        qatorlar_list.append(f"<div style='padding:4px 0; border-bottom:1px solid #1e293b;'>🛏️ <b>{kr['xona']}</b>{j_txt}: {m_n} (<b>{kr['odam_soni']} kishi</b>)</div>")
                     ro_html = "<div style='max-height:190px; overflow-y:auto; margin-top:6px;'>" + "".join(qatorlar_list) + "</div>"
 
                 pos_style = "right: 0; left: auto; transform: none;" if idx_d >= len(sana_royxati) - 3 else ("left: 0; transform: none;" if idx_d <= 1 else "")
@@ -1029,7 +1047,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                     f"<span style='font-size:13px; font-weight:700; color:#a78bfa !important;'>📅 {d.strftime('%d.%m.%Y')} ({kun_nom_qisqa[d.weekday()]})</span>"
                     f"<span style='font-size:11px; opacity:0.75; cursor:pointer;' onclick='this.closest(\"details\").removeAttribute(\"open\")'>✖ Yopish</span>"
                     f"</div>"
-                    f"<div style='margin-top:5px; font-size:11.5px;'>Band xonalar: <b>{band_x_c}/36</b> &nbsp;|&nbsp; Mehmonlar: <b>{jami_m_c} kishi</b></div>"
+                    f"<div style='margin-top:5px; font-size:11.5px;'>Band xonalar: <b>{band_x_c}/36</b> &nbsp;|&nbsp; Jami mehmon: <b>{jami_m_c} kishi</b></div>"
                     f"{ro_html}"
                     f"</div></details></th>"
                 )
@@ -1181,13 +1199,15 @@ elif sahifa == "📅 Timeline & Shaxmatka":
     if not bugun_ichidagilar:
         st.success(f"🟢 **{xona_nomi} hozir to'liq bo'sh ({umumiy_sigim} kishilik) | Tozalik holati: {tozalik_map.get(xona_nomi, 'Toza')}**")
     else:
+        jami_xona_odam = sum(int(m[6] or 1) for m in bugun_ichidagilar)
+        st.info(f"🛏️ **{xona_nomi}** ichida hozir jami **{jami_xona_odam} nafar** mehmon yashamoqda ({len(bugun_ichidagilar)} ta bron):")
         for m in bugun_ichidagilar:
             joy_nom = krovat_nomini_ajrat(m[8], m[7])
             joy_badge = f" | 🛏️ **{joy_nom}**" if joy_nom else ""
             vik_m = " 🔒 *(To'liq xona vikup)*" if "To'liq band" in str(m[8] or '') else ""
             tel_m = f" | 📞 {m[9]}" if m[9] else ""
             qarz_matni = f" | ⚠️ Qarz: {m[5]:,.0f} UZS" if m[5] > 0 else ""
-            st.markdown(f"- 👤 **{m[0]}** ({m[6]} kishi | {m[1]}{joy_badge}{tel_m}{vik_m} | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
+            st.markdown(f"- 👤 **{m[0]}** (**{m[6]} kishi** | {m[1]}{joy_badge}{tel_m}{vik_m} | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
 
 # ====================================================
 # SAHIFA 3: 📝 YANGI BRON / QABUL
@@ -1218,6 +1238,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         df['faktik_narx'] = df['faktik_narx'].fillna(0)
         df['tolagan_summa'] = df['tolagan_summa'].fillna(0)
         df['qoldiq'] = df['qoldiq'].fillna(0)
+        df['odam_soni'] = df['odam_soni'].fillna(1).astype(int)
         df['izoh'] = df['izoh'].fillna('')
         df['xona_turi'] = df['xona_turi'].fillna('')
         df['kirish_vaqti_korsat'] = df.apply(lambda r: str(r['sana']) if '(' in str(r.get('sana', '')) else f"{r.get('kirish_sanasi', '')} (12:00)", axis=1)
@@ -1260,7 +1281,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
             return "To'langan"
 
         if not bron_df.empty:
-            st.subheader("📅 Oldindan Bron qilinganlar")
+            bron_odam_jami = int(bron_df['odam_soni'].sum())
+            st.subheader(f"📅 Oldindan Bron qilinganlar ({bron_odam_jami} kishi / {len(bron_df)} ta bron)")
             bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'izoh']].copy()
             bron_korsatish.columns = ["ID", "Mehmon", "Xona va Joy", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh (To'liq)"]
             for col in ["Jami Summa", "To'langan"]:
@@ -1268,7 +1290,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
             bron_korsatish["Qoldiq"] = bron_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
             st.dataframe(bron_korsatish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(bron_korsatish))
 
-        st.subheader(f"🟢 Hozirgi (Faol) Mehmonlar ({len(faol_df)} ta)")
+        faol_odam_jami = int(faol_df['odam_soni'].sum()) if not faol_df.empty else 0
+        st.subheader(f"🟢 Hozirgi (Faol) Mehmonlar ({faol_odam_jami} kishi / {len(faol_df)} ta bron)")
         if not faol_df.empty:
             faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
             faol_korsatish['holat'] = faol_df.apply(aqlli_holat_matni, axis=1)
@@ -1281,7 +1304,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         else:
             st.info("📭 Hozircha hostelda faol mehmonlar yo'q.")
 
-        with st.expander(f"🗄️ Arxivdagi (Chiqib ketgan) mehmonlar — Davr: {g_davr_nomi} ({len(arxiv_df)} ta)", expanded=bool(qidiruv and not arxiv_df.empty)):
+        arxiv_odam_jami = int(arxiv_df['odam_soni'].sum()) if not arxiv_df.empty else 0
+        with st.expander(f"🗄️ Arxivdagi (Chiqib ketgan) mehmonlar — Davr: {g_davr_nomi} ({arxiv_odam_jami} kishi / {len(arxiv_df)} ta bron)", expanded=bool(qidiruv and not arxiv_df.empty)):
             if not arxiv_df.empty:
                 arx_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
                 arx_korsatish.columns = ["ID", "Mehmon", "Xona va Joy", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Holat", "Izoh (To'liq)"]
@@ -1368,7 +1392,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     s_kun = (k_dt + timedelta(days=k_i)).strftime("%d.%m.%Y")
                     kunlik_qatorlar.append({
                         "Sana (Kecha)": s_kun,
-                        "Kim uchun bandlangan": f_row['mijoz'],
+                        "Kim uchun bandlangan": f"{f_row['mijoz']} ({f_row['odam_soni']} kishi)",
                         "Xona va Joy": f_row['xona_korsat'],
                         "Narx / Kecha": f"{int(f_row.get('kunlik_narx') or 0):,} UZS"
                     })
@@ -1507,7 +1531,12 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             st.error(f"🚻 Xatolik: {y_xona} da hozir **{zid_jins}** mehmon(lar) bor! Umumiy xonaga **{m_jins}** mehmonni ko'chirib bo'lmaydi.")
                         else:
                             baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
-                            kr_b = f" [🛏️ {koch_krovat_str.strip()}]" if (y_tomon != "O'rtadagi" and koch_krovat_str.strip()) else ""
+                            if y_tomon == "O'rtadagi":
+                                kr_b = " [🛏️ Dvuxspalniy]"
+                            elif koch_toliq_band or m_odam == y_sigim:
+                                kr_b = f" [🛏️ Barcha joylar (1-{y_sigim}-joy)]"
+                            else:
+                                kr_b = f" [🛏️ {koch_krovat_str.strip()}]" if koch_krovat_str.strip() else ""
                             y_xona_turi = f"To'liq band ({baz_tur}){kr_b}" if (koch_toliq_band or y_tomon == "O'rtadagi") else f"{baz_tur}{kr_b}"
                             eski_iz_toza = re.sub(r'\[🛏️ .*?\]', '', str(k_data.get('izoh', '') or '')).strip()
                             yangi_iz_koch = f"{kr_b.strip()} {eski_iz_toza}".strip()
@@ -1527,7 +1556,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                 c_row = barcha_faol_va_bron[barcha_faol_va_bron['mijoz_id'] == c_id].iloc[0]
 
                 with st.form("admin_checkout_form", enter_to_submit=False):
-                    st.caption(f"👤 Mehmon: **{c_row['mijoz']}** | To'lagan: **{int(c_row['tolagan_summa']):,} UZS** | Qoldiq qarz: **{max(0, int(c_row['qoldiq'])):,} UZS**")
+                    st.caption(f"👤 Mehmon: **{c_row['mijoz']}** ({c_row['odam_soni']} kishi) | To'lagan: **{int(c_row['tolagan_summa']):,} UZS** | Qoldiq qarz: **{max(0, int(c_row['qoldiq'])):,} UZS**")
                     col_v1, col_v2 = st.columns(2, gap="medium")
                     with col_v1:
                         vozvrat_sum = st.number_input("⏪ Mehmonga qaytarilgan summa / Vozvrat (0 = qaytarilmadi):", min_value=0, max_value=int(c_row['tolagan_summa'] or 0), value=0, step=10000)
@@ -1557,7 +1586,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout + Vozvrat", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni bo'shatdi. Qaytarildi: -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})")
                                 tg_xabar_yubor(
                                     "Checkout va Pul qaytarish (Vozvrat)",
-                                    f"👤 <b>Mijoz:</b> {c_row['mijoz']}\n"
+                                    f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n"
                                     f"🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)\n"
                                     f"⏪ <b>Qaytarilgan summa (Vozvrat):</b> -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})\n"
                                     f"💰 <b>Qolgan sof to'lov:</b> {yangi_tolagan:,.0f} UZS",
@@ -1567,7 +1596,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni topshirdi va arxivga o'tkazildi")
                                 tg_xabar_yubor(
                                     "Checkout (Mijoz chiqib ketdi)",
-                                    f"👤 <b>Mijoz:</b> {c_row['mijoz']}\n🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)",
+                                    f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)",
                                     xodim_ismi
                                 )
                             st.success(f"✅ {c_row['mijoz']} ({c_row['xona']}) chiqarildi va xona «🧹 Tozalash kerak» ro'yxatiga o'tkazildi!")
@@ -1618,7 +1647,12 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         y_xona = y_xona_str.split(" | ")[1].split(" (")[0].strip()
                         y_sigim = XONALAR[y_tomon][y_xona][0]
                         baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
-                        kr_tag = f" [🛏️ {y_krovat_str.strip()}]" if (y_tomon != "O'rtadagi" and y_krovat_str.strip()) else ""
+                        if y_tomon == "O'rtadagi":
+                            kr_tag = " [🛏️ Dvuxspalniy]"
+                        elif y_vikup or y_odam == y_sigim:
+                            kr_tag = f" [🛏️ Barcha joylar (1-{y_sigim}-joy)]"
+                        else:
+                            kr_tag = f" [🛏️ {y_krovat_str.strip()}]" if y_krovat_str.strip() else ""
                         y_xona_turi = f"To'liq band ({baz_tur}){kr_tag}" if (y_vikup or y_tomon == "O'rtadagi") else f"{baz_tur}{kr_tag}"
                         y_kirish_str = y_kirish.strftime("%Y-%m-%d")
                         y_sana_vaqt_toliq = f"{y_kirish_str} ({y_soat.strip()})"
@@ -1644,11 +1678,11 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                        (bugungi_sana, t_id, y_ism.strip(), "Tahrirlash (Kassa tuzatish)", farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
 
-                        jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism}, Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
+                        jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism} ({y_odam} kishi), Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
                         tg_xabar_yubor(
                             "Mijoz ma'lumotlari tahrirlandi",
                             f"🆔 <b>ID:</b> {t_id}\n"
-                            f"👤 <b>Mijoz:</b> {y_ism} ({y_xona} — {y_xona_turi})\n"
+                            f"👤 <b>Mijoz:</b> {y_ism} ({y_odam} kishi | {y_xona} — {y_xona_turi})\n"
                             f"🕒 <b>Kirish:</b> {y_sana_vaqt_toliq} ➡️ <b>Chiqish:</b> {y_chiqish_str} ({y_kunlar} kun)\n"
                             f"💰 <b>Yangi jami:</b> {y_faktik:,.0f} UZS | <b>To'lagan:</b> {y_tolagan:,.0f} UZS | <b>Qoldiq:</b> {max(0, y_qoldiq):,.0f} UZS",
                             xodim_ismi, muhim=True
@@ -1820,7 +1854,8 @@ elif sahifa == "🛒 Kassa (POS Market)":
 
         if not df_savdo.empty:
             jami_m_sum = df_savdo['jami_summa'].fillna(0).sum()
-            st.markdown(f"**Jami savdo aylanmasi ({len(df_savdo)} ta amaliyot):** `{jami_m_sum:,.0f} UZS`")
+            jami_m_dona = int(df_savdo['miqdor'].fillna(1).sum())
+            st.markdown(f"**Jami savdo aylanmasi ({len(df_savdo)} ta xarid / {jami_m_dona} dona tovar):** `{jami_m_sum:,.0f} UZS`")
             df_savdo_korsatish = df_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
             df_savdo_korsatish.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Mas'ul Xodim"]
             df_savdo_korsatish['Jami Summa'] = df_savdo_korsatish['Jami Summa'].apply(lambda x: f"{int(x):,} UZS")
@@ -1958,7 +1993,7 @@ elif sahifa == "👑 CEO va Hisobotlar":
     render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana, g_tugash_sana, g_davr_nomi)
 
 # ====================================================
-# SAHIFA 10: ⚙️ SOZLAMALAR (DINAMIK TARIFLAR VA REGLAMENT BOSHQARUVI — FAQAT CEO UCHUN!)
+# SAHIFA 10: ⚙️ SOZLAMALAR
 # ====================================================
 elif sahifa == "⚙️ Sozlamalar":
     st.header("⚙️ Tizim, Tariflar va Profil Sozlamalari Markazi")
@@ -1995,6 +2030,7 @@ elif sahifa == "⚙️ Sozlamalar":
             st.subheader("🖥️ Tizim Diagnostikasi va Ma'lumotlar Bazasi")
             baza_turi_matn = "Online Cloud (PostgreSQL)" if IS_POSTGRES else "Lokal Server (SQLite)"
             jami_bron_c = db.fetchone("SELECT COUNT(*) FROM bronlar")[0] or 0
+            jami_mehmon_c = db.fetchone("SELECT SUM(odam_soni) FROM bronlar")[0] or 0
             jami_savdo_c = db.fetchone("SELECT COUNT(*) FROM savdolar")[0] or 0
             jami_audit_c = db.fetchone("SELECT COUNT(*) FROM audit_log")[0] or 0
 
@@ -2003,7 +2039,7 @@ elif sahifa == "⚙️ Sozlamalar":
             sm2.metric("🕒 Server vaqti (Toshkent)", hozirgi_uz_vaqt.strftime("%d.%m.%Y | %H:%M"))
 
             sm3, sm4, sm5 = st.columns(3)
-            sm3.metric("🛏️ Jami bronlar", f"{jami_bron_c} ta")
+            sm3.metric("🛏️ Jami mehmonlar", f"{jami_mehmon_c} kishi ({jami_bron_c} bron)")
             sm4.metric("🛒 Market savdolari", f"{jami_savdo_c} ta")
             sm5.metric("🕵️ Audit yozuvlari", f"{jami_audit_c} ta")
 
