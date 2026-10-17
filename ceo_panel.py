@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti
+from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti, xona_tozalik_ozgartir
 from tg_bot import tg_xabar_yubor
 
-def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
+def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=None, g_davr_nomi="Barcha vaqt"):
     st.header("💸 Xarajatlar va Smena Topshirish")
     tanlov = st.radio("Bo'limni tanlang:", ["➖ Yangi Xarajat kiritish", "🔄 Smenani yopish (Z-Hisobot)", "📋 Xarajatlar va Smenalar tarixi"], horizontal=True)
     st.markdown("---")
@@ -27,7 +27,7 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
                     db.execute("INSERT INTO xarajatlar (vaqt, sana, kategoriya, summa, tolov_turi, izoh, xodim) VALUES (?,?,?,?,?,?,?)",
                                (hozir, bugungi_sana, kat, summa, tolov_turi, izoh.strip(), xodim_ismi))
                     jurnalga_yozish("Kassa (Xarajat)", xodim_ismi, "Xarajat qilindi", f"{kat}: {summa:,.0f} UZS ({tolov_turi}) - {izoh.strip()}")
-                    st.success("✅ Xarajat bazaga kiritildi va haftalik hisobotga qo'shildi!")
+                    st.success("✅ Xarajat bazaga kiritildi va hisobotga qo'shildi!")
                     st.rerun()
 
     elif tanlov == "🔄 Smenani yopish (Z-Hisobot)":
@@ -58,52 +58,57 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana):
                 st.rerun()
 
     else:
-        st.markdown("##### 💸 Oxirgi Xarajatlar")
-        df_x = db.read_df("SELECT vaqt, kategoriya, summa, tolov_turi, izoh, xodim FROM xarajatlar ORDER BY id DESC")
+        st.info(f"📅 Ko'rsatilayotgan davr: **{g_davr_nomi}**")
+        if g_bosh_sana and g_tugash_sana:
+            df_x = db.read_df("SELECT vaqt, kategoriya, summa, tolov_turi, izoh, xodim FROM xarajatlar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
+            df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar WHERE vaqt >= ? AND vaqt <= ? ORDER BY id DESC", (g_bosh_sana + " 00:00:00", g_tugash_sana + " 23:59:59"))
+        else:
+            df_x = db.read_df("SELECT vaqt, kategoriya, summa, tolov_turi, izoh, xodim FROM xarajatlar ORDER BY id DESC")
+            df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar ORDER BY id DESC")
+
+        jami_x_sum = df_x['summa'].fillna(0).sum() if not df_x.empty else 0
+        st.markdown(f"##### 💸 Xarajatlar ro'yxati ({len(df_x)} ta — Jami: {jami_x_sum:,.0f} UZS)")
         if not df_x.empty:
             df_x.columns = ["Vaqt", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
             df_x["Summa"] = df_x["Summa"].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(df_x, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_x))
         else:
-            st.info("Xarajatlar kiritilmagan.")
+            st.info("Tanlangan davrda xarajatlar kiritilmagan.")
 
         st.markdown("---")
-        st.markdown("##### 🔄 Topshirilgan Smenalar")
-        df_s = db.read_df("SELECT vaqt, xodim, naqd_tushum, karta_tushum, xarajatlar_sum, sof_kassa, izoh FROM smenalar ORDER BY id DESC")
+        st.markdown(f"##### 🔄 Topshirilgan Smenalar ({len(df_s)} ta)")
         if not df_s.empty:
             df_s.columns = ["Vaqt", "Xodim", "Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa", "Izoh"]
             for col in ["Naqd Kirim", "Karta Kirim", "Xarajat", "Sof Kassa"]:
                 df_s[col] = df_s[col].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(df_s, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_s))
         else:
-            st.info("Smenalar hali yopilmagan.")
+            st.info("Tanlangan davrda smenalar yopilmagan.")
 
 
-def render_ceo_panel(xodim_ismi, bugungi_sana):
+def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=None, g_davr_nomi="Barcha vaqt"):
     st.header("👑 CEO Boshqaruv Paneli (Y.S.H. ERP)")
     ceo_tanlov = st.radio(
         "Kerakli bo'limni tanlang:",
-        ["📊 Haftalik Hisobot (Sklad va Xarajat)", "🚪 Checkout (Va Arxiv)", "👥 Xodimlar (Adminlar)", "🕵️ Batafsil Audit", "📝 Maxsus Izohlar", "🗑️ O'chirish"],
+        ["📊 Davriy Hisobot (Sklad va Xarajat)", "🚪 Checkout (Va Arxiv)", "👥 Xodimlar va Rollar", "🕵️ Batafsil Audit", "📝 Maxsus Izohlar", "🗑️ O'chirish"],
         horizontal=True
     )
     st.markdown("---")
     df_admin = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
 
-    if ceo_tanlov == "📊 Haftalik Hisobot (Sklad va Xarajat)":
-        st.subheader("📦 Sklad, Market Savdolar va Mayda Xarajatlar bo'yicha Yig'ma Hisobot")
-        st.markdown("Telegram botga faqat mijozlar xabari boradi. Sklad kirim-chiqimi, Market savdolari va barcha mayda xarajatlar shu yerda yig'ilib boradi.")
-        
-        c_d1, c_d2 = st.columns(2)
-        with c_d1:
-            bosh_sana = st.date_input("Boshlanish sanasi:", toshkent_vaqti().date() - timedelta(days=7))
-        with c_d2:
-            tugash_sana = st.date_input("Tugash sanasi:", toshkent_vaqti().date())
+    if ceo_tanlov == "📊 Davriy Hisobot (Sklad va Xarajat)":
+        st.subheader(f"📦 Sklad, Market Savdolar va Mayda Xarajatlar Hisoboti — {g_davr_nomi}")
+        st.info(f"📅 Hisobot davri: **{g_davr_nomi}**")
 
-        b_str = bosh_sana.strftime("%Y-%m-%d")
-        t_str = tugash_sana.strftime("%Y-%m-%d")
+        if g_bosh_sana and g_tugash_sana:
+            df_h_savdo = db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
+            df_h_xarajat = db.read_df("SELECT * FROM xarajatlar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
+            fayl_davr = f"{g_bosh_sana}_{g_tugash_sana}"
+        else:
+            df_h_savdo = db.read_df("SELECT * FROM savdolar ORDER BY id DESC")
+            df_h_xarajat = db.read_df("SELECT * FROM xarajatlar ORDER BY id DESC")
+            fayl_davr = "Barcha_vaqt"
 
-        df_h_savdo = db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (b_str, t_str))
-        df_h_xarajat = db.read_df("SELECT * FROM xarajatlar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (b_str, t_str))
         df_h_ombor = db.read_df("SELECT nomi, hajmi, kategoriya, tannarx, narxi, qoldiq FROM mahsulotlar ORDER BY qoldiq ASC")
 
         jami_savdo_sum = df_h_savdo['jami_summa'].fillna(0).sum() if not df_h_savdo.empty else 0
@@ -116,37 +121,40 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
         m3.metric("📦 Hozirgi Skladdagi Tovarlar Qiymati", f"{ombor_qiymati:,.0f} UZS")
 
         st.download_button(
-            label=f"📥 {b_str} dan {t_str} gacha To'liq Hisobotni Yuklab Olish (Excel)",
-            data=haftalik_hisobot_yuklash(b_str, t_str),
-            file_name=f"Y.S.H._Haftalik_Hisobot_{b_str}_{t_str}.xlsx",
+            label=f"📥 Tanlangan davr ({g_davr_nomi}) bo'yicha To'liq Hisobotni Yuklab Olish (Excel)",
+            data=haftalik_hisobot_yuklash(g_bosh_sana, g_tugash_sana),
+            file_name=f"Y.S.H._Hisobot_{fayl_davr}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
             use_container_width=True
         )
 
         st.markdown("---")
-        st.markdown("##### 🛒 Market Savdolari (Tanlangan davr)")
+        st.markdown(f"##### 🛒 Market Savdolari ({g_davr_nomi})")
         if not df_h_savdo.empty:
             df_hs_view = df_h_savdo[['sana', 'mahsulot_nomi', 'xaridor', 'miqdor', 'jami_summa', 'tolov_tafsiloti', 'xodim']].copy()
             df_hs_view.columns = ["Sana", "Mahsulot", "Xaridor", "Miqdor", "Jami Summa", "To'lov Turi", "Xodim"]
             df_hs_view["Jami Summa"] = df_hs_view["Jami Summa"].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(df_hs_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_hs_view))
         else:
-            st.info("Bu davrda savdo bo'lmagan.")
+            st.info("Tanlangan davrda savdo bo'lmagan.")
 
-        st.markdown("##### 💸 Mayda-chuyda Xarajatlar (Tanlangan davr)")
+        st.markdown(f"##### 💸 Mayda-chuyda Xarajatlar ({g_davr_nomi})")
         if not df_h_xarajat.empty:
             df_hx_view = df_h_xarajat[['sana', 'kategoriya', 'summa', 'tolov_turi', 'izoh', 'xodim']].copy()
             df_hx_view.columns = ["Sana", "Kategoriya", "Summa", "Kassa", "Izoh", "Xodim"]
             df_hx_view["Summa"] = df_hx_view["Summa"].apply(lambda x: f"{int(x):,} UZS")
             st.dataframe(df_hx_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_hx_view))
         else:
-            st.info("Bu davrda xarajat kiritilmagan.")
+            st.info("Tanlangan davrda xarajat kiritilmagan.")
 
     elif ceo_tanlov == "🚪 Checkout (Va Arxiv)":
         if not df_admin.empty:
             faollar = df_admin[df_admin['holat'] != 'Chiqib ketgan']
             arxivdagilar = df_admin[df_admin['holat'] == 'Chiqib ketgan']
+            if g_bosh_sana and g_tugash_sana and not arxivdagilar.empty:
+                arxivdagilar = arxivdagilar[(arxivdagilar['chiqish_sanasi'] >= g_bosh_sana) & (arxivdagilar['chiqish_sanasi'] <= g_tugash_sana)]
+
             if not faollar.empty:
                 with st.form("checkout_form", enter_to_submit=False):
                     korsatkich = faollar['mijoz_id'] + " - " + faollar['mijoz'] + " (" + faollar['xona'] + " | Chiqish: " + faollar['chiqish_sanasi'] + " 12:00)"
@@ -158,31 +166,33 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                             st.error(f"⚠️ Mijozda {mijoz_qator['qoldiq']:,.0f} UZS qarz bor! Qarz yopilmaguncha chiqarolmaysiz.")
                         else:
                             db.execute("UPDATE bronlar SET holat = 'Chiqib ketgan', chiqish_sanasi = ? WHERE mijoz_id = ?", (bugungi_sana, c_id))
+                            xona_tozalik_ozgartir(mijoz_qator['xona'], "Tozalash kerak")
                             jurnalga_yozish(c_id, xodim_ismi, "Checkout", f"Mijoz ({mijoz_qator['mijoz']}) {mijoz_qator['xona']} ni topshirdi")
-                            tg_xabar_yubor("Checkout (Mijoz chiqib ketdi)", f"👤 <b>Mijoz:</b> {mijoz_qator['mijoz']}\n🛏 <b>Xona:</b> {mijoz_qator['xona']}", xodim_ismi)
-                            st.success("Mijoz arxivlandi!")
+                            tg_xabar_yubor("Checkout (Mijoz chiqib ketdi)", f"👤 <b>Mijoz:</b> {mijoz_qator['mijoz']}\n🛏 <b>Xona:</b> {mijoz_qator['xona']} (🧹 Tozalashga berildi)", xodim_ismi)
+                            st.success("Mijoz arxivlandi va xona 'Tozalash kerak' ro'yxatiga tushdi!")
                             st.rerun()
             else:
                 st.info("Hozircha faol mijozlar yo'q.")
 
             st.markdown("---")
-            st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar ({len(arxivdagilar)} ta)")
+            st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar — {g_davr_nomi} ({len(arxivdagilar)} ta)")
             if not arxivdagilar.empty:
                 arx_view = arxivdagilar[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'sana', 'chiqish_sanasi', 'izoh']].copy()
                 arx_view.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Izoh"]
                 for col in ["Jami Summa", "To'langan"]: arx_view[col] = arx_view[col].apply(lambda x: f"{int(x or 0):,} UZS")
                 st.dataframe(arx_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(arx_view))
             else:
-                st.info("Arxiv bo'sh.")
+                st.info("Tanlangan davrda arxivlangan mijozlar yo'q.")
         else:
             st.info("Bazada ma'lumot yo'q.")
 
-    elif ceo_tanlov == "👥 Xodimlar (Adminlar)":
-        st.subheader("👥 Tizim foydalanuvchilari va Shaxsiy Admin profillari")
+    elif ceo_tanlov == "👥 Xodimlar va Rollar":
+        st.subheader("👥 Barcha xodimlar va Rollar")
         c_u1, c_u2 = st.columns([1.2, 1])
         with c_u1:
             df_users = db.read_df("SELECT login, ism, role, parol FROM xodimlar")
-            df_users.columns = ["Login", "Ism-Sharif (Auditda ko'rinadi)", "Rol", "Parol"]
+            df_users["Holat"] = "🟢 Faol"
+            df_users.columns = ["Login", "Ism-Sharif (Foydalanuvchi)", "Rol", "Parol", "Holat"]
             st.dataframe(df_users, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_users))
 
             och_royxat = [l for l in df_users["Login"].tolist() if l != 'ceo']
@@ -197,7 +207,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
 
             st.markdown("---")
             if st.button("📲 Telegram Bot aloqasini tekshirish (Test xabar)"):
-                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Y.S.H. ERP: Telegram bot faqat Mijozlar va Avto-Checkout xabarlarini yuborishga sozlandi!", xodim_ismi)
+                natija = tg_xabar_yubor("Aloqa tekshiruvi", "✅ Y.S.H. ERP: Telegram bot faol ishlamoqda!", xodim_ismi)
                 if natija:
                     st.success("✅ Telegramingizga xabar yuborildi!")
                 else:
@@ -225,7 +235,12 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                         st.error("Barcha maydonlarni to'ldiring!")
 
     elif ceo_tanlov == "🕵️ Batafsil Audit":
-        df_audit = db.read_df("SELECT * FROM audit_log ORDER BY id DESC")
+        st.info(f"📅 Ko'rsatilayotgan davr: **{g_davr_nomi}**")
+        if g_bosh_sana and g_tugash_sana:
+            df_audit = db.read_df("SELECT * FROM audit_log WHERE vaqt >= ? AND vaqt <= ? ORDER BY id DESC", (g_bosh_sana + " 00:00:00", g_tugash_sana + " 23:59:59"))
+        else:
+            df_audit = db.read_df("SELECT * FROM audit_log ORDER BY id DESC")
+
         if not df_audit.empty:
             qidir_audit = st.text_input("🔍 Audit ichidan qidirish (Xodim ismi, harakat yoki mijoz bo'yicha):")
             if qidir_audit:
@@ -243,7 +258,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana):
                 column_config=avto_kenglik_sozla(df_a_korsatish)
             )
         else:
-            st.info("Hozircha tizimda o'zgarishlar qayd etilmagan.")
+            st.info("Tanlangan davrda tizimda o'zgarishlar qayd etilmagan.")
 
     elif ceo_tanlov == "📝 Maxsus Izohlar":
         st.markdown("Bu yerdagi izohlarni faqat CEO yoza oladi. Ular adminlarga asosiy jadvallarda ko'rinadi.")
