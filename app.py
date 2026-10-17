@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
+import re
 from datetime import datetime, timedelta, timezone
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
     xona_sigimini_ol, xonadagi_band_joyni_hisobla, xona_jinsini_tekshir, narx_hisobla, id_yaratish,
     jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval,
     toshkent_vaqti, avto_checkout_tekshir, avto_kenglik_sozla, aqlli_sana_filtri_ui,
-    xona_tozalik_ozgartir, barcha_xona_tozalik_ol, tema_css_yuklash
+    xona_tozalik_ozgartir, barcha_xona_tozalik_ol
 )
 from tg_bot import tg_xabar_yubor
 from ceo_panel import render_xarajatlar_va_smena, render_ceo_panel
@@ -23,82 +24,242 @@ if 'xodim_ismi' not in st.session_state:
     st.session_state.xodim_ismi = ""
 if 'ui_tema' not in st.session_state:
     st.session_state.ui_tema = "🌙 Qorong'u (Dark UI)"
-if 'tl_bosh_sana' not in st.session_state:
-    st.session_state.tl_bosh_sana = toshkent_vaqti().date() - timedelta(days=1)
 
 # =========================================================
-# PROFESSIONAL UI/UX VA SKRINSHOTLARDAGI XATOLARNI TUZATISH
-# (1-, 4-, 5-skrinshotlar: Modal oyna, Tugmalar va Chap menyu)
+# 100% ISHLAYDIGAN DARK / LIGHT MODE VA UI/UX DIZAYN DVIJOGI
 # =========================================================
 def mukammal_ui_ux_sozla(tema_nomi):
-    tema_css_yuklash(tema_nomi)
     if tema_nomi == "🌙 Qorong'u (Dark UI)":
-        st.markdown(
-            "<style>"
-            ".block-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] { gap: 8px !important; margin-top: 6px !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { "
-            "padding: 11px 14px !important; border-radius: 10px !important; width: 100% !important; "
-            "background-color: #171b2b !important; border: 1px solid #262b40 !important; "
-            "transition: all 0.2s ease !important; cursor: pointer !important; margin: 0 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { "
-            "background-color: #1f253a !important; border-color: #7c3aed !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label > div:first-child { display: none !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { "
-            "font-size: 14px !important; font-weight: 600 !important; color: #e2e8f0 !important; margin: 0 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) { "
-            "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; "
-            "border-color: #a78bfa !important; box-shadow: 0 4px 12px rgba(124,58,237,0.35) !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) p { color: #ffffff !important; }"
-            ".stButton > button, .stDownloadButton > button { "
-            "background-color: #1e2436 !important; color: #f8fafc !important; border: 1px solid #334155 !important; "
-            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; }"
-            ".stButton > button p, .stButton > button span, .stDownloadButton > button p, .stDownloadButton > button span { "
-            "color: #f8fafc !important; }"
-            ".stButton > button:hover, .stDownloadButton > button:hover { "
-            "background-color: #2b334d !important; border-color: #8b5cf6 !important; }"
-            "button[kind='primary'], .stFormSubmitButton > button { "
-            "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; "
-            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
-            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
-            "div[role='dialog'] { background-color: #141724 !important; color: #f8fafc !important; border: 1px solid #334155 !important; border-radius: 16px !important; }"
-            "div[role='dialog'] h1, div[role='dialog'] h2, div[role='dialog'] h3, div[role='dialog'] p, div[role='dialog'] label, div[role='dialog'] span { color: #f8fafc !important; }"
-            "div[role='dialog'] input { color: #0f172a !important; background-color: #f8fafc !important; }"
-            "</style>",
-            unsafe_allow_html=True
+        css = """
+        <style>
+        .block-container { padding-top: 1.8rem !important; padding-bottom: 3rem !important; }
+        .stApp { background-color: #0b0d14 !important; color: #f8fafc !important; }
+        section[data-testid="stSidebar"] { background-color: #111420 !important; border-right: 1px solid #1e2436 !important; }
+        
+        /* Barcha sarlavha, matn, caption va metric qiymatlarini 100% yorqin oq/och-kulrang qilish */
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+        .stApp label, .stApp p, .stApp li,
+        div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="stMarkdownContainer"] span,
+        div[data-testid="stMarkdownContainer"] div {
+            color: #f1f5f9 !important;
+        }
+        div[data-testid="stCaptionContainer"],
+        div[data-testid="stCaptionContainer"] p,
+        div[data-testid="stCaptionContainer"] span,
+        section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] * {
+            color: #cbd5e1 !important;
+            opacity: 1 !important;
+        }
+
+        /* CEO Panel va Dashboarddagi st.metric raqamlari (41,000 UZS va h.k.) */
+        div[data-testid="metric-container"],
+        div[data-testid="stMetric"] {
+            background-color: #151928 !important;
+            border: 1px solid #2a314b !important;
+            border-left: 5px solid #8b5cf6 !important;
+            padding: 16px 20px !important;
+            border-radius: 14px !important;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+        }
+        div[data-testid="stMetricLabel"] *,
+        div[data-testid="metric-container"] label * {
+            color: #cbd5e1 !important;
+            font-size: 13.5px !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] *,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] * {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+
+        /* st.info, st.success, st.warning, st.error ichidagi yozuvlar */
+        div[data-testid="stAlert"] * {
+            color: #f8fafc !important;
+        }
+
+        /* Chap menyu bo'limlarini alohida tugma-kartochka qilish va dumaloq radio belgini yashirish */
+        section[data-testid="stSidebar"] div[role="radiogroup"] {
+            gap: 8px !important;
+            margin-top: 6px !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+            padding: 10px 14px !important;
+            border-radius: 10px !important;
+            width: 100% !important;
+            background-color: #171c2e !important;
+            border: 1px solid #262e48 !important;
+            transition: all 0.18s ease !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+            background-color: #212842 !important;
+            border-color: #7c3aed !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label p {
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            color: #e2e8f0 !important;
+            margin: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+            border-color: #a78bfa !important;
+            box-shadow: 0 4px 14px rgba(124,58,237,0.4) !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
+            color: #ffffff !important;
+        }
+
+        /* Barcha tugmalar (Download, Oddiy, Primary) */
+        .stButton > button, .stDownloadButton > button {
+            background-color: #1e2436 !important;
+            color: #ffffff !important;
+            border: 1px solid #3b4461 !important;
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+            padding: 0.5rem 1rem !important;
+        }
+        .stButton > button *, .stDownloadButton > button * {
+            color: #ffffff !important;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            background-color: #2a324b !important;
+            border-color: #8b5cf6 !important;
+        }
+        button[kind="primary"], .stFormSubmitButton > button {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+            border: none !important;
+            color: #ffffff !important;
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+        }
+        button[kind="primary"] *, .stFormSubmitButton > button * {
+            color: #ffffff !important;
+        }
+
+        /* Formalar va Expanderlar */
+        .stForm, div[data-testid="stExpander"] {
+            background-color: #141724 !important;
+            border: 1px solid #262b40 !important;
+            border-radius: 14px !important;
+            padding: 14px !important;
+        }
+
+        /* Modal oyna (st.dialog — Yangi bron) */
+        div[role="dialog"] {
+            background-color: #141724 !important;
+            color: #ffffff !important;
+            border: 1px solid #3b4461 !important;
+            border-radius: 16px !important;
+        }
+        div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3,
+        div[role="dialog"] p, div[role="dialog"] label, div[role="dialog"] span,
+        div[data-testid="stModal"] * {
+            color: #f8fafc !important;
+        }
+        div[role="dialog"] input, .stApp input[type="text"], .stApp input[type="number"], .stApp input[type="password"] {
+            color: #0f172a !important;
+            background-color: #f8fafc !important;
+            font-weight: 600 !important;
+        }
+        div[data-baseweb="select"] * {
+            color: #0f172a !important;
+        }
+        </style>
+        """
+        st.markdown(css, unsafe_allow_html=True)
+    else:
+        css = """
+        <style>
+        .block-container { padding-top: 1.8rem !important; padding-bottom: 3rem !important; }
+        .stApp { background-color: #f8fafc !important; color: #0f172a !important; }
+        section[data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0 !important; }
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label, .stApp p { color: #0f172a !important; }
+        div[data-testid="stCaptionContainer"] * { color: #475569 !important; opacity: 1 !important; }
+        div[data-testid="metric-container"], div[data-testid="stMetric"] {
+            background-color: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            border-left: 6px solid #4f46e5 !important;
+            padding: 16px 20px !important;
+            border-radius: 14px !important;
+            box-shadow: 2px 4px 12px rgba(0,0,0,0.05) !important;
+        }
+        div[data-testid="stMetricLabel"] * { color: #475569 !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] * { color: #0f172a !important; font-weight: 800 !important; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] { gap: 8px !important; margin-top: 6px !important; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+            padding: 10px 14px !important;
+            border-radius: 10px !important;
+            width: 100% !important;
+            background-color: #f1f5f9 !important;
+            border: 1px solid #cbd5e1 !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child { display: none !important; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label p { font-size: 14px !important; font-weight: 600 !important; color: #0f172a !important; margin: 0 !important; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+            border-color: #4f46e5 !important;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p { color: #ffffff !important; }
+        .stButton > button, .stDownloadButton > button {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+        }
+        button[kind="primary"], .stFormSubmitButton > button {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+        }
+        button[kind="primary"] *, .stFormSubmitButton > button * { color: #ffffff !important; }
+        </style>
+        """
+        st.markdown(css, unsafe_allow_html=True)
+
+# =========================================================
+# XONADAGI KROVAT / JOY O'RNINI ANIQLASH FUNKSIYALARI
+# =========================================================
+def xonadagi_band_krovatlar(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT mijoz, xona_turi, izoh FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
         )
     else:
-        st.markdown(
-            "<style>"
-            ".block-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] { gap: 8px !important; margin-top: 6px !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { "
-            "padding: 11px 14px !important; border-radius: 10px !important; width: 100% !important; "
-            "background-color: #f1f5f9 !important; border: 1px solid #cbd5e1 !important; "
-            "transition: all 0.2s ease !important; cursor: pointer !important; margin: 0 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { "
-            "background-color: #e2e8f0 !important; border-color: #4f46e5 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label > div:first-child { display: none !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { "
-            "font-size: 14px !important; font-weight: 600 !important; color: #0f172a !important; margin: 0 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) { "
-            "background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; "
-            "border-color: #4f46e5 !important; box-shadow: 0 4px 12px rgba(79,70,229,0.25) !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) p { color: #ffffff !important; }"
-            ".stButton > button, .stDownloadButton > button { "
-            "background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; "
-            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; }"
-            ".stButton > button p, .stDownloadButton > button p { color: #0f172a !important; }"
-            "button[kind='primary'], .stFormSubmitButton > button { "
-            "background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; border: none !important; "
-            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
-            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
-            "</style>",
-            unsafe_allow_html=True
+        rows = db.fetchall(
+            "SELECT mijoz, xona_turi, izoh FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, chiqish_str, kirish_str)
         )
+    band_map = {}
+    for m_ism, x_tur, iz in rows:
+        birikma = f"{x_tur or ''} {iz or ''}"
+        topildi = re.findall(r'(\d)-joy', birikma)
+        for j_raqam in topildi:
+            band_map[int(j_raqam)] = m_ism
+    return band_map
+
+def krovat_nomini_ajrat(xona_turi_str, izoh_str=""):
+    birikma = f"{xona_turi_str or ''} {izoh_str or ''}"
+    m = re.search(r'\[🛏️ (.*?)\]', birikma)
+    if m:
+        return m.group(1)
+    return ""
 
 # ==========================================
-# AVTO-LOGIN (REFRESHDA CHIQIB KETMASLIK UCHUN)
+# AVTO-LOGIN (REFRESHDA VA SANA BOSILGANDA CHIQIB KETMASLIK UCHUN)
 # ==========================================
 if not st.session_state.logged_in and "user" in st.query_params:
     saved_login = st.query_params["user"]
@@ -141,7 +302,7 @@ if not st.session_state.logged_in:
 avto_checkout_tekshir()
 
 # ==========================================
-# 2. CHAP MENYU (5-SKRINSHOTDAGI ALOHIDA BO'LIMLAR VA TEMA)
+# 2. CHAP MENYU VA TEMA
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
@@ -149,7 +310,7 @@ bugungi_sana = hozirgi_uz_vaqt.strftime("%Y-%m-%d")
 hozirgi_soat = hozirgi_uz_vaqt.hour
 
 st.sidebar.title("🏨 Y.S.H. ERP")
-st.sidebar.caption(f"👤 **{xodim_ismi}** ({st.session_state.role.upper()})")
+st.sidebar.markdown(f"<div style='font-size:14px; font-weight:700; margin-bottom:10px;'>👤 {xodim_ismi} ({st.session_state.role.upper()})</div>", unsafe_allow_html=True)
 
 tanlangan_tema = st.sidebar.selectbox(
     "🎨 Interfeys temasi:",
@@ -161,7 +322,7 @@ mukammal_ui_ux_sozla(tanlangan_tema)
 is_dark = (tanlangan_tema == "🌙 Qorong'u (Dark UI)")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("<div style='font-size:12px; font-weight:700; opacity:0.7; margin-bottom:8px; letter-spacing:1px;'>ASOSIY BO'LIMLAR</div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='font-size:12px; font-weight:800; letter-spacing:1px; margin-bottom:6px;'>ASOSIY BO'LIMLAR</div>", unsafe_allow_html=True)
 
 if st.session_state.role == "ceo":
     menyu_variantlar = [
@@ -189,12 +350,14 @@ else:
         "⚙️ Sozlamalar"
     ]
 
-sahifa = st.sidebar.radio("Bo'limni tanlang:", menyu_variantlar, label_visibility="collapsed")
+# Agar Timeline jadvalidagi sana ustiga bosilgan bo'lsa, avtomatik Timeline bo'limida qolish
+default_nav_idx = 1 if "tl_date" in st.query_params else 0
+sahifa = st.sidebar.radio("Bo'limni tanlang:", menyu_variantlar, index=default_nav_idx, label_visibility="collapsed")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("##### 🔍 Global CRM Davr Filtri")
 g_bosh_sana, g_tugash_sana, g_davr_nomi = aqlli_sana_filtri_ui(joylashuv="sidebar", key_prefix="global")
-st.sidebar.caption(f"📌 Faol davr: **{g_davr_nomi}**")
+st.sidebar.markdown(f"<div style='font-size:13px; font-weight:600; margin-top:4px;'>📌 Faol davr: <b>{g_davr_nomi}</b></div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.download_button(
@@ -212,21 +375,19 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     st.query_params.clear()
     st.rerun()
 
-# ==========================================
+# =========================================================
 # YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
-# (1-SKRINSHOT VA 4-BAND: KELISH SOATINI QO'LDA HAM KIRITISH BILAN!)
-# ==========================================
+# (KROVAT / JOY YO'NALISHI VA O'RNI + KELISH SOATI BILAN!)
+# =========================================================
 def render_qabul_formasi(form_key_suffix="main"):
-    st.markdown("##### 📍 1. Avval qanotni (tomonni) tanlang:")
-    tomon = st.radio(
-        "Qanotni tanlang:",
-        ["Chap tomon", "O'rtadagi", "O'ng tomon"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key=f"qanot_{form_key_suffix}"
-    )
-    st.write("")
-    
+    c_top1, c_top2 = st.columns([1.5, 1.5], gap="medium")
+    with c_top1:
+        tomon = st.radio(
+            "📍 1. Avval qanotni (tomonni) tanlang:",
+            ["Chap tomon", "O'rtadagi", "O'ng tomon"],
+            horizontal=True,
+            key=f"qanot_{form_key_suffix}"
+        )
     xona_variantlar = []
     tozalik_map = barcha_xona_tozalik_ol()
     for x_nom, (sigim, _) in XONALAR[tomon].items():
@@ -238,6 +399,17 @@ def render_qabul_formasi(form_key_suffix="main"):
         else:
             tavsif = f"{x_nom} ({sigim} kishilik){toza_belgi}"
         xona_variantlar.append(tavsif)
+
+    with c_top2:
+        tanlangan_xona_label = st.selectbox(
+            f"🛏️ 2. Xona raqamini tanlang ({tomon}):",
+            xona_variantlar,
+            key=f"xona_sel_{form_key_suffix}"
+        )
+
+    tanlangan_xona_nom = tanlangan_xona_label.split(" (")[0].strip()
+    tanlangan_xona_sigim = XONALAR[tomon][tanlangan_xona_nom][0]
+    hozir_band_krovatlar = xonadagi_band_krovatlar(tanlangan_xona_nom, bugungi_sana, (hozirgi_uz_vaqt.date() + timedelta(days=1)).strftime("%Y-%m-%d"))
 
     with st.form(f"qabul_form_{form_key_suffix}", clear_on_submit=True, enter_to_submit=False):
         bron_turi = st.radio("📌 Ro'yxatdan o'tish turi:", ["Hozir qabul qilish (Kirish)", "Oldindan band qilish (Bron)"], horizontal=True)
@@ -251,19 +423,42 @@ def render_qabul_formasi(form_key_suffix="main"):
             
             ks1, ks2 = st.columns([1.3, 1])
             with ks1:
-                kirish_sanasi = st.date_input("📅 Kelish (Kirish) sanasi *", toshkent_vaqti().date())
+                kirish_sanasi = st.date_input("📅 Kelish sanasi *", toshkent_vaqti().date())
             with ks2:
-                kirish_soati_input = st.text_input(
-                    "🕒 Kelish soati *",
-                    value=toshkent_vaqti().strftime("%H:%M"),
-                    help="Mijoz kelgan aniq soatni qo'lda ham kiritishingiz mumkin (masalan: 08:30 yoki 14:15)"
-                )
+                kirish_soati_input = st.text_input("🕒 Kelish soati *", value=toshkent_vaqti().strftime("%H:%M"))
             
         with col2:
-            tanlangan_xona_label = st.selectbox(f"🛏 Xona raqami ({tomon}) *:", xona_variantlar)
-            maks_odam = 2 if tomon == "O'rtadagi" else 4
+            maks_odam = 2 if tomon == "O'rtadagi" else tanlangan_xona_sigim
             odam_soni = st.number_input(f"👥 Mehmonlar soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
-            toliq_band_vikup = st.checkbox("🔒 Xonani to'liq band qilish (Vikup — begona kiritilmasin, to'liq xona narxida)")
+            
+            # BOSH BOSHQARUVCHI TALABI: KROVAT / JOY O'RNINI BELGILASH (DVUXSPALNIYDAN TASHQARI)
+            if tomon != "O'rtadagi":
+                joy_yonalish = st.radio(
+                    "🧭 Krovat tartibi (Yo'nalish):",
+                    ["➡️ Chapdan o'ngga", "⬅️ O'ngdan chapga"],
+                    horizontal=True
+                )
+                krovat_opsiyalar = []
+                default_krovat = []
+                for j_i in range(1, tanlangan_xona_sigim + 1):
+                    if j_i in hozir_band_krovatlar:
+                        krovat_opsiyalar.append(f"{j_i}-joy (🔴 Band: {hozir_band_krovatlar[j_i]})")
+                    else:
+                        opt_str = f"{j_i}-joy (🟢 Bo'sh)"
+                        krovat_opsiyalar.append(opt_str)
+                        if len(default_krovat) < 1:
+                            default_krovat.append(opt_str)
+                tanlangan_krovatlar = st.multiselect(
+                    f"🛏️ Mijoz yotadigan joyni tanlang ({tanlangan_xona_nom}):",
+                    krovat_opsiyalar,
+                    default=default_krovat
+                )
+            else:
+                joy_yonalish = ""
+                tanlangan_krovatlar = []
+                st.info("🛌 O'rtadagi Lyuks xona: Bitta Dvuxspalniy (To'liq xona)")
+
+            toliq_band_vikup = st.checkbox("🔒 Xonani to'liq band qilish (Vikup — to'liq xona narxida)")
             kunlar = st.number_input("🌙 Necha kecha yashaydi? (7+ kunga 10% chegirma)", min_value=1, max_value=365, value=1)
 
         with col3:
@@ -280,10 +475,24 @@ def render_qabul_formasi(form_key_suffix="main"):
             if not mijoz_ism.strip():
                 st.error("⚠️ Mijoz ismini kiriting!")
             else:
-                xona = tanlangan_xona_label.split(" (")[0].strip()
-                xona_sigimi = XONALAR[tomon][xona][0]
+                xona = tanlangan_xona_nom
+                xona_sigimi = tanlangan_xona_sigim
                 bazaviy_tur = "Dvuxspalniy" if tomon == "O'rtadagi" else ("2 alohida krovat" if xona_sigimi == 2 else f"{xona_sigimi} kishilik")
-                xona_turi_matn = f"To'liq band ({bazaviy_tur})" if (toliq_band_vikup or tomon == "O'rtadagi") else bazaviy_tur
+                
+                # Tanlangan krovat / joy nomini shakllantirish
+                if tomon != "O'rtadagi" and not toliq_band_vikup:
+                    yon_qisqa = "Chapdan" if "Chapdan" in joy_yonalish else "O'ngdan"
+                    if tanlangan_krovatlar:
+                        joy_raqamlar = ", ".join([k.split(" (")[0] for k in tanlangan_krovatlar])
+                    else:
+                        joy_raqamlar = "1-joy"
+                    krovat_yorliq = f"{yon_qisqa} {joy_raqamlar}"
+                elif toliq_band_vikup and tomon != "O'rtadagi":
+                    krovat_yorliq = f"Barcha joylar (1-{xona_sigimi}-joy)"
+                else:
+                    krovat_yorliq = "Dvuxspalniy"
+
+                xona_turi_matn = f"To'liq band ({bazaviy_tur}) [🛏️ {krovat_yorliq}]" if (toliq_band_vikup or tomon == "O'rtadagi") else f"{bazaviy_tur} [🛏️ {krovat_yorliq}]"
                 
                 chiqish_sanasi = kirish_sanasi + timedelta(days=kunlar)
                 kirish_str = kirish_sanasi.strftime("%Y-%m-%d")
@@ -326,7 +535,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                     kirish_vaqti_toliq = f"{kirish_str} ({soat_str})"
                     muddat_nomi = f"{kunlar} kun"
 
-                    izoh_yakuniy = qoshimcha_izoh.strip()
+                    izoh_yakuniy = f"[🛏️ {krovat_yorliq}] {qoshimcha_izoh.strip()}".strip()
                     if toliq_band_vikup and "To'liq xona" not in izoh_yakuniy:
                         izoh_yakuniy = f"[🔒 To'liq xona vikup] {izoh_yakuniy}".strip()
 
@@ -347,21 +556,21 @@ def render_qabul_formasi(form_key_suffix="main"):
                     if tolangan > 0:
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (hozirgi_sana, yangi_id, mijoz_ism.strip(), "Yotoq (Qabul)", tolangan, tolov_shakli, t_taf, xodim_ismi))
-                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism} ({odam_soni} kishi), Xona: {xona} ({xona_turi_matn}), Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
+                    jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism} ({odam_soni} kishi), Xona: {xona} ({krovat_yorliq}), Kirish: {kirish_vaqti_toliq}, To'ladi: {tolangan:,.0f} ({t_taf})")
                     
                     tel_qator = f"📞 <b>Telefon:</b> {mijoz_tel.strip()}\n" if mijoz_tel.strip() else ""
                     tg_xabar_yubor(
                         f"Yangi {saq_turi}",
                         f"👤 <b>Mijoz:</b> {mijoz_ism} ({odam_soni} kishi | {jinsi})\n"
                         f"{tel_qator}"
-                        f"🛏 <b>Xona:</b> {xona} — {xona_turi_matn} ({kunlar} kecha)\n"
+                        f"🛏 <b>Xona va Joy:</b> {xona} — <b>{krovat_yorliq}</b> ({kunlar} kecha)\n"
                         f"🕒 <b>Kirish:</b> {kirish_vaqti_toliq} ➡️ <b>Chiqish:</b> {chiqish_str} 12:00\n"
                         f"💰 <b>Jami hisob:</b> {yakuniy_narx:,.0f} UZS\n"
                         f"✅ <b>To'ladi:</b> {tolangan:,.0f} UZS ({t_taf})\n"
                         f"⚠️ <b>Qoldiq qarz:</b> {max(0, qoldiq):,.0f} UZS",
                         xodim_ismi, muhim=maxsus_belgi
                     )
-                    st.success(f"✅ Mijoz ({mijoz_ism}) {xona} ({xona_turi_matn}) ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
+                    st.success(f"✅ Mijoz ({mijoz_ism}) {xona} ({krovat_yorliq}) ga muvaffaqiyatli joylashtirildi! Jami hisob: {yakuniy_narx:,.0f} UZS")
                     st.rerun()
 
 if hasattr(st, "dialog"):
@@ -373,14 +582,14 @@ else:
         pass
 
 # ====================================================
-# SAHIFA 1: 🏠 BOSHQARUV PANELI
+# SAHIFA 1: 🏠 BOSHQARUV PANELI (IXCHAM KIRISH-CHIQISHLAR BILAN!)
 # ====================================================
 if sahifa == "🏠 Boshqaruv paneli":
     hafta_kunlari_uz = ["dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba"]
     oy_nomlari_uz = ["", "yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"]
     bugun_matn = f"Bugun, {hozirgi_uz_vaqt.day}-{oy_nomlari_uz[hozirgi_uz_vaqt.month]}, {hafta_kunlari_uz[hozirgi_uz_vaqt.weekday()]}"
 
-    st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='opacity: 0.75; margin-top: 4px; margin-bottom: 18px;'>{bugun_matn} &nbsp;|&nbsp; Moliya davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='margin-top: 4px; margin-bottom: 18px;'>{bugun_matn} &nbsp;|&nbsp; Moliya davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
 
     df_barcha = db.read_df("SELECT * FROM bronlar")
     df_savdolar = db.read_df("SELECT * FROM savdolar")
@@ -413,13 +622,13 @@ if sahifa == "🏠 Boshqaruv paneli":
     card_bg = "#141724" if is_dark else "#ffffff"
     card_border = "#262b40" if is_dark else "#cbd5e1"
     text_main = "#ffffff" if is_dark else "#0f172a"
-    text_sub = "#94a3b8" if is_dark else "#475569"
+    text_sub = "#cbd5e1" if is_dark else "#475569"
 
     oc1, oc2, oc3, oc4 = st.columns(4, gap="medium")
     with oc1:
         st.markdown(
             f"<div style='background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); padding: 20px; border-radius: 16px; color: white; box-shadow: 0 8px 20px rgba(124,58,237,0.3);'>"
-            f"<div style='font-size: 14px; color: white; opacity: 0.95;'>Band xonalar</div>"
+            f"<div style='font-size: 14px; color: white;'>Band xonalar</div>"
             f"<div style='font-size: 32px; font-weight: 800; color: white; margin: 6px 0;'>{band_xonalar_soni} <span style='font-size: 20px; color: white; opacity: 0.85;'>/ {jami_xonalar_soni}</span></div>"
             f"<div style='font-size: 13px; color: white; margin-bottom: 8px;'>{bandlik_foiz}% bandlik</div>"
             f"<div style='background: rgba(255,255,255,0.25); height: 6px; border-radius: 4px; width: 100%;'>"
@@ -452,47 +661,69 @@ if sahifa == "🏠 Boshqaruv paneli":
         )
 
     st.write("")
+    # 1-SKRINSHOT TUZATISHI: IXCHAM, NAFIS VA KAM JOY EGALLAYDIGAN KIRISH-CHIQISHLAR BLOKI!
     with st.container(border=True):
         st.markdown("##### 🛎️ Bugungi kirish va chiqishlar")
-        if bugungi_kirishlar_df.empty and bugungi_chiqishlar_df.empty:
+        faol_chiqishlar = bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan'] if not bugungi_chiqishlar_df.empty else pd.DataFrame()
+        if bugungi_kirishlar_df.empty and faol_chiqishlar.empty:
             st.caption("Bugun uchun rejalashtirilgan kirish yoki chiqishlar yo'q.")
         else:
+            row_bg = "#191e30" if is_dark else "#f1f5f9"
             for _, k_row in bugungi_kirishlar_df.iterrows():
-                ck1, ck2 = st.columns([4, 1.2])
-                ck1.markdown(f"🟢 **{k_row['mijoz']}** ({k_row['odam_soni']} kishi) — *Kelish • {k_row['xona']}*")
+                joy_str = krovat_nomini_ajrat(k_row.get('xona_turi', ''), k_row.get('izoh', ''))
+                joy_b = f" • 🛏️ {joy_str}" if joy_str else ""
+                soat_k = str(k_row['sana']).split("(")[1].replace(")", "") if "(" in str(k_row.get('sana', '')) else "12:00"
                 if k_row.get('bron_turi') == 'Bron':
-                    if ck2.button("🔑 Kiritish (check-in)", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
+                    ck1, ck2 = st.columns([5.5, 1.3])
+                    ck1.markdown(
+                        f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #f59e0b; font-size:13.5px;'>"
+                        f"🟠 <b>{k_row['mijoz']}</b> ({k_row['odam_soni']} kishi) &nbsp;—&nbsp; <span style='opacity:0.85;'>Bron kelishi • <b>{k_row['xona']}</b>{joy_b}</span></div>",
+                        unsafe_allow_html=True
+                    )
+                    if ck2.button("🔑 Check-in", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET bron_turi='Hozir kirish' WHERE mijoz_id=?", (k_row['mijoz_id'],))
                         jurnalga_yozish(k_row['mijoz_id'], xodim_ismi, "Check-in (Keldi)", f"Bron qilingan {k_row['mijoz']} ({k_row['xona']}) kelib joylashdi")
                         st.rerun()
                 else:
-                    ck2.success("✔️ Kirish qilingan")
+                    st.markdown(
+                        f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #22c55e; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:13.5px;'>"
+                        f"<div>🟢 <b>{k_row['mijoz']}</b> ({k_row['odam_soni']} kishi) &nbsp;—&nbsp; <span style='opacity:0.85;'>Kelish ({soat_k}) • <b>{k_row['xona']}</b>{joy_b}</span></div>"
+                        f"<span style='background:rgba(34,197,94,0.18); color:#4ade80; border:1px solid #22c55e; padding:3px 12px; border-radius:20px; font-size:12px; font-weight:700;'>✔ Kirish qilingan</span>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
 
-            for _, ch_row in bugungi_chiqishlar_df[bugungi_chiqishlar_df['holat'] != 'Chiqib ketgan'].iterrows():
-                cc1, cc2 = st.columns([4, 1.2])
+            for _, ch_row in faol_chiqishlar.iterrows():
+                joy_str = krovat_nomini_ajrat(ch_row.get('xona_turi', ''), ch_row.get('izoh', ''))
+                joy_b = f" • 🛏️ {joy_str}" if joy_str else ""
                 qarz_b = f" | ⚠️ Qarz: {int(ch_row['qoldiq']):,} UZS" if ch_row['qoldiq'] > 0 else ""
-                cc1.markdown(f"🟡 **{ch_row['mijoz']}** ({ch_row['odam_soni']} kishi{qarz_b}) — *Ketish (12:00) • {ch_row['xona']}*")
+                cc1, cc2 = st.columns([5.5, 1.3])
+                cc1.markdown(
+                    f"<div style='background:{row_bg}; padding:8px 14px; border-radius:10px; border-left:4px solid #eab308; font-size:13.5px;'>"
+                    f"🟡 <b>{ch_row['mijoz']}</b> ({ch_row['odam_soni']} kishi{qarz_b}) &nbsp;—&nbsp; <span style='opacity:0.85;'>Ketish (12:00) • <b>{ch_row['xona']}</b>{joy_b}</span></div>",
+                    unsafe_allow_html=True
+                )
                 if ch_row['qoldiq'] <= 0:
-                    if cc2.button("🚪 Chiqarish (check-out)", key=f"dash_out_{ch_row['mijoz_id']}", use_container_width=True):
+                    if cc2.button("🚪 Chiqarish", key=f"dash_out_{ch_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET holat='Chiqib ketgan' WHERE mijoz_id=?", (ch_row['mijoz_id'],))
                         xona_tozalik_ozgartir(ch_row['xona'], "Tozalash kerak")
                         jurnalga_yozish(ch_row['mijoz_id'], xodim_ismi, "Checkout", f"{ch_row['mijoz']} ({ch_row['xona']}) chiqib ketdi")
                         st.rerun()
                 else:
-                    cc2.error("⚠️ Qarzdor")
+                    cc2.markdown("<div style='text-align:center; padding:6px; background:rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; font-weight:700;'>⚠️ Qarzdor</div>", unsafe_allow_html=True)
 
     with st.container(border=True):
         st.markdown("##### 🛏️ Bugungi xonalar holati")
         xh1, xh2, xh3 = st.columns(3, gap="medium")
-        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{band_xonalar_soni}</div><div style='font-size:13px; color:#8b5cf6; font-weight:600;'>● Band xonalar</div></div>", unsafe_allow_html=True)
-        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{bosh_toza_xonalar_soni}</div><div style='font-size:13px; color:#16a34a; font-weight:600;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
-        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{tozalash_kerak_soni}</div><div style='font-size:13px; color:#dc2626; font-weight:600;'>● Tozalash kerak</div></div>", unsafe_allow_html=True)
+        xh1.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{band_xonalar_soni}</div><div style='font-size:13px; color:#a78bfa; font-weight:600;'>● Band xonalar</div></div>", unsafe_allow_html=True)
+        xh2.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{bosh_toza_xonalar_soni}</div><div style='font-size:13px; color:#4ade80; font-weight:600;'>● Bo'sh (Toza)</div></div>", unsafe_allow_html=True)
+        xh3.markdown(f"<div style='background:{card_bg}; border:1px solid {card_border}; padding:14px; border-radius:12px;'><div style='font-size:24px; font-weight:800; color:{text_main};'>{tozalash_kerak_soni}</div><div style='font-size:13px; color:#f87171; font-weight:600;'>● Tozalash kerak</div></div>", unsafe_allow_html=True)
 
         st.write("")
         st.markdown("##### 📊 Keyingi 7 kunlik bandlik")
         kun_qisqa = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
         bar_cols = st.columns(7)
-        lbl_col = "#a78bfa" if is_dark else "#4f46e5"
+        lbl_col = "#c4b5fd" if is_dark else "#4f46e5"
         for i in range(7):
             d_obj = hozirgi_uz_vaqt.date() + timedelta(days=i)
             d_str = d_obj.strftime("%Y-%m-%d")
@@ -503,14 +734,14 @@ if sahifa == "🏠 Boshqaruv paneli":
             else:
                 d_band_xonalar = 0
             d_foiz = int(round((d_band_xonalar / jami_xonalar_soni) * 100))
-            bar_color = "#7c3aed" if i == 0 else "#6366f1"
+            bar_color = "#8b5cf6" if i == 0 else "#6366f1"
             with bar_cols[i]:
                 st.markdown(
                     f"<div style='text-align: center;'>"
                     f"<div style='font-size: 12px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px;'>{d_foiz}%</div>"
-                    f"<div style='height: 100px; width: 34px; background: rgba(124,58,237,0.12); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
+                    f"<div style='height: 100px; width: 34px; background: rgba(124,58,237,0.15); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
                     f"<div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div></div>"
-                    f"<div style='font-size: 13px; margin-top: 6px; color: {text_main}; font-weight: 500;'>{k_nom} ({d_obj.strftime('%d.%m')})</div></div>",
+                    f"<div style='font-size: 13px; margin-top: 6px; color: {text_main}; font-weight: 600;'>{k_nom} ({d_obj.strftime('%d.%m')})</div></div>",
                     unsafe_allow_html=True
                 )
 
@@ -599,7 +830,7 @@ if sahifa == "🏠 Boshqaruv paneli":
 
 # ====================================================
 # SAHIFA 2: 📅 TIMELINE & SHAXMATKA
-# (2- VA 3-SKRINSHOT: BOSILADIGAN SANALAR VA YIG'ILADIGAN QANOTLAR BILAN!)
+# (2-SKRINSHOT TUZATISHI: ORTIQCHA PANELLARSIZ, TO'G'RIDAN-TO'G'RI JADVALDAGI SANALAR BOSILADI!)
 # ====================================================
 elif sahifa == "📅 Timeline & Shaxmatka":
     tl_col1, tl_col2 = st.columns([3, 1])
@@ -610,24 +841,10 @@ elif sahifa == "📅 Timeline & Shaxmatka":
             if st.button("➕ Yangi bron", type="primary", use_container_width=True):
                 yangi_bron_modal()
 
-    nav1, nav2, nav3, col_kat, col_kun, col_san = st.columns([0.55, 0.75, 0.55, 2.2, 1.3, 1.2])
-    with nav1:
-        if st.button("⬅️", help="7 kun orqaga", use_container_width=True):
-            st.session_state.tl_bosh_sana = st.session_state.tl_bosh_sana - timedelta(days=7)
-            st.rerun()
-    with nav2:
-        if st.button("📍 Bugun", use_container_width=True):
-            st.session_state.tl_bosh_sana = toshkent_vaqti().date() - timedelta(days=1)
-            st.rerun()
-    with nav3:
-        if st.button("➡️", help="7 kun oldinga", use_container_width=True):
-            st.session_state.tl_bosh_sana = st.session_state.tl_bosh_sana + timedelta(days=7)
-            st.rerun()
-
+    col_kat, col_kun, col_san = st.columns([2.2, 1.3, 1.1])
     tanlangan_katalog = col_kat.radio("Qanot (Qavat):", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True)
     kun_soni_tl = col_kun.radio("Ko'rinish:", [7, 14, 30], index=1, horizontal=True, format_func=lambda x: f"{x} kun")
-    bosh_sana = col_san.date_input("Boshlanish sanasi:", value=st.session_state.tl_bosh_sana)
-    st.session_state.tl_bosh_sana = bosh_sana
+    bosh_sana = col_san.date_input("Boshlanish sanasi:", toshkent_vaqti().date() - timedelta(days=1))
 
     c_r1, c_r2 = st.columns([2.5, 1])
     rejim_tl = c_r1.radio(
@@ -644,30 +861,30 @@ elif sahifa == "📅 Timeline & Shaxmatka":
     tozalik_map = barcha_xona_tozalik_ol()
     kun_nom_qisqa = ["DU", "SE", "CH", "PA", "JU", "SH", "YA"]
 
-    # 2-SKRINSHOT TALABI: SANALARNI BOSILADIGAN QILISH!
-    sana_tugma_variantlar = ["🔍 Sanani bosib tekshirish (Yopiq)"] + [f"{kun_nom_qisqa[d.weekday()]} {d.strftime('%d.%m')} ({d.strftime('%Y-%m-%d')})" for d in sana_royxati]
-    bosilgan_sana_label = st.radio(
-        "📅 Istalgan sananing ustiga bosing — o'sha kundagi aniq bandlik va mehmonlar ro'yxati chiqadi:",
-        sana_tugma_variantlar,
-        index=0,
-        horizontal=True
-    )
-    if bosilgan_sana_label != "🔍 Sanani bosib tekshirish (Yopiq)":
-        tanlangan_kun_str = bosilgan_sana_label.split("(")[1].replace(")", "").strip()
+    # AGAR JADVALDAGI SANA USTIGA BOSILGAN BO'LSA (?tl_date=YYYY-MM-DD), O'SHA SANADAGI XONALAR VA MIJOZLARNI KO'RSATISH!
+    tanlangan_tl_sana = st.query_params.get("tl_date", None)
+    if tanlangan_tl_sana:
         shu_kun_bronlar = db.read_df(
-            "SELECT mijoz_id, mijoz, xona, odam_soni, sana, chiqish_sanasi, qoldiq, xona_turi, telefon FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi <= ? AND chiqish_sanasi > ?",
-            (tanlangan_kun_str, tanlangan_kun_str)
+            "SELECT mijoz_id, mijoz, xona, xona_turi, odam_soni, sana, chiqish_sanasi, qoldiq, telefon, izoh FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi <= ? AND chiqish_sanasi > ?",
+            (tanlangan_tl_sana, tanlangan_tl_sana)
         )
         with st.container(border=True):
+            hd1, hd2 = st.columns([4.5, 1])
             band_x_soni = len(shu_kun_bronlar['xona'].unique()) if not shu_kun_bronlar.empty else 0
             jami_m_soni = int(shu_kun_bronlar['odam_soni'].sum()) if not shu_kun_bronlar.empty else 0
-            st.markdown(f"##### 📅 **{tanlangan_kun_str}** sanasidagi hostel holati: **{band_x_soni} / 36 ta xona band** ({jami_m_soni} nafar mehmon)")
+            hd1.markdown(f"##### 📅 **{tanlangan_tl_sana}** sanasidagi xonalar va mehmonlar: **{band_x_soni} / 36 ta xona band** ({jami_m_soni} nafar mehmon)")
+            if hd2.button("✖️ Yopish", use_container_width=True):
+                if "tl_date" in st.query_params:
+                    del st.query_params["tl_date"]
+                st.rerun()
             if not shu_kun_bronlar.empty:
-                shu_kun_bronlar.columns = ["ID", "Mehmon", "Xona", "Odam", "Kirgan Vaqti", "Ketish Sanasi", "Qoldiq Qarz", "Xona Turi", "Telefon"]
-                shu_kun_bronlar["Qoldiq Qarz"] = shu_kun_bronlar["Qoldiq Qarz"].apply(lambda x: f"{max(0, int(x)):,} UZS")
-                st.dataframe(shu_kun_bronlar, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(shu_kun_bronlar))
+                shu_kun_bronlar['Joy (Krovat)'] = shu_kun_bronlar.apply(lambda r: krovat_nomini_ajrat(r.get('xona_turi', ''), r.get('izoh', '')) or "Standart", axis=1)
+                shu_kun_view = shu_kun_bronlar[['mijoz_id', 'mijoz', 'xona', 'Joy (Krovat)', 'odam_soni', 'sana', 'chiqish_sanasi', 'qoldiq', 'telefon']].copy()
+                shu_kun_view.columns = ["ID", "Mehmon", "Xona", "Krovat / Joy", "Odam", "Kirgan Vaqti", "Ketish Sanasi", "Qoldiq Qarz", "Telefon"]
+                shu_kun_view["Qoldiq Qarz"] = shu_kun_view["Qoldiq Qarz"].apply(lambda x: f"{max(0, int(x)):,} UZS")
+                st.dataframe(shu_kun_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(shu_kun_view))
             else:
-                st.success(f"🟢 {tanlangan_kun_str} sanasida barcha 36 ta xona bo'sh!")
+                st.success(f"🟢 {tanlangan_tl_sana} sanasida barcha 36 ta xona bo'sh!")
 
     if rejim_tl == "📊 Grafik Timeline (Videodagidek chiziqli + Hover)":
         st.markdown(
@@ -676,8 +893,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
             "<span>🟠 <b>Kutilmoqda (Oldindan bron)</b></span>"
             "<span>🔴 <b>To'lanmagan (Qarzdor)</b></span>"
             "<span>⚪ <b>Chiqib ketgan (Arxiv)</b></span>"
-            "<span>🔴 <i>Xona yonidagi qizil nuqta — Tozalash kerak</i></span>"
-            "<span>💡 <i>Qanot nomini (▾ CHAP TOMON...) bossangiz yig'iladi/ochiladi!</i></span>"
+            "<span>💡 <i>Jadvaldagi <b>Sana (JU 23, SH 24...)</b> ustiga bossangiz — shu kundagi mehmonlar chiqadi!</i></span>"
             "</div>",
             unsafe_allow_html=True
         )
@@ -699,31 +915,44 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         sec_hdr_bg = "#1e1b4b" if is_dark else "#ede9fe"
         sec_hdr_col = "#c4b5fd" if is_dark else "#4c1d95"
         room_bg = "rgba(124,58,237,0.06)" if is_dark else "#f8fafc"
+        curr_user_q = st.session_state.user_login
 
-        # 3-SKRINSHOT TALABI: HAR BIR QANOTNI YIG'ILADIGAN (<details open><summary>) QILISH!
         html_parts = [
             f"<style>"
             f".ysh-tl-wrap {{ overflow-x: auto; border: 1px solid {border_tbl}; border-radius: 14px; background: {bg_tbl}; padding: 8px; }}"
             f".ysh-wing-details {{ margin-bottom: 10px; border: 1px solid {border_tbl}; border-radius: 10px; overflow: visible; }}"
             f".ysh-wing-summary {{ padding: 10px 14px; font-weight: 800; font-size: 13px; background: {sec_hdr_bg}; color: {sec_hdr_col}; cursor: pointer; user-select: none; border-radius: 9px; list-style: none; display: flex; justify-content: space-between; align-items: center; }}"
-            f".ysh-wing-summary:hover {{ opacity: 0.92; }}"
             f".ysh-tl-table {{ width: 100%; border-collapse: collapse; font-family: sans-serif; color: {txt_tbl}; min-width: 950px; table-layout: fixed; }}"
             f".ysh-tl-table th, .ysh-tl-table td {{ border: 1px solid {border_tbl}; padding: 5px 3px; text-align: center; font-size: 12px; position: relative; vertical-align: middle; height: 38px; }}"
+            f".ysh-date-link {{ display: block; text-decoration: none !important; color: inherit !important; padding: 2px; border-radius: 6px; transition: background 0.15s; }}"
+            f".ysh-date-link:hover {{ background: rgba(139,92,246,0.35) !important; }}"
             f".ysh-tl-room {{ text-align: left !important; padding: 6px 12px !important; font-weight: 700; width: 145px !important; background: {room_bg}; }}"
             f".ysh-bar {{ display: block; padding: 6px 10px; border-radius: 8px; color: #ffffff !important; font-weight: 600; font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 1px; cursor: pointer; position: relative; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }}"
             f".ysh-bar:hover {{ overflow: visible; z-index: 999; }}"
-            f".ysh-bar .ysh-tip {{ visibility: hidden; opacity: 0; position: absolute; left: 8px; top: 32px; background: #0f172a; color: #f8fafc !important; border: 1px solid #7c3aed; border-radius: 10px; padding: 10px 14px; width: 255px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.65); font-weight: 400; font-size: 12px; line-height: 1.5; transition: opacity 0.15s; pointer-events: none; white-space: normal; }}"
+            f".ysh-bar .ysh-tip {{ visibility: hidden; opacity: 0; position: absolute; left: 8px; top: 32px; background: #0f172a; color: #f8fafc !important; border: 1px solid #7c3aed; border-radius: 10px; padding: 10px 14px; width: 265px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.65); font-weight: 400; font-size: 12px; line-height: 1.5; transition: opacity 0.15s; pointer-events: none; white-space: normal; }}"
             f".ysh-bar .ysh-tip b, .ysh-bar .ysh-tip span {{ color: #f8fafc !important; }}"
             f".ysh-bar:hover .ysh-tip {{ visibility: visible; opacity: 1; }}"
             f"</style>"
             f"<div class='ysh-tl-wrap'>"
         ]
 
+        # 3-QIZIL MAYDON TALABI: JADVALDAGI SANALARNING O'ZI BOSILADIGAN QILINDI!
         thead_html = "<thead><tr><th class='ysh-tl-room'>Xona</th>"
         for d in sana_royxati:
-            is_today = (d.strftime("%Y-%m-%d") == bugungi_sana)
-            th_style = "background: #7c3aed; color: #ffffff !important; border-radius: 6px;" if is_today else ""
-            thead_html += f"<th style='{th_style}'>{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></th>"
+            d_iso = d.strftime("%Y-%m-%d")
+            is_today = (d_iso == bugungi_sana)
+            is_selected = (d_iso == tanlangan_tl_sana)
+            if is_selected:
+                th_style = "background: #ec4899; color: #ffffff !important; border-radius: 6px;"
+            elif is_today:
+                th_style = "background: #7c3aed; color: #ffffff !important; border-radius: 6px;"
+            else:
+                th_style = ""
+            thead_html += (
+                f"<th style='{th_style}' title='Shu sanadagi mehmonlarni ko`rish uchun bosing'>"
+                f"<a class='ysh-date-link' href='?user={curr_user_q}&tl_date={d_iso}' target='_self'>"
+                f"{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></a></th>"
+            )
         thead_html += "</tr></thead>"
 
         for tomon, xonalar in XONALAR.items():
@@ -731,7 +960,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                 continue
             html_parts.append(
                 f"<details class='ysh-wing-details' open>"
-                f"<summary class='ysh-wing-summary'><span>▾ {tomon.upper()} ({len(xonalar)} XONA)</span><span style='font-size:11px; font-weight:500; opacity:0.85;'>Yig'ish / Ochish uchun bosing ↕️</span></summary>"
+                f"<summary class='ysh-wing-summary'><span>▾ {tomon.upper()} ({len(xonalar)} XONA)</span><span style='font-size:11px; font-weight:500; opacity:0.85;'>Yig'ish / Ochish ↕️</span></summary>"
                 f"<table class='ysh-tl-table'>{thead_html}<tbody>"
             )
             for xona, (sigim, _) in xonalar.items():
@@ -805,14 +1034,17 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                             m_jam = int(br.get('faktik_narx', 0) or 0)
                             m_tol = int(br.get('tolagan_summa', 0) or 0)
                             m_qar = max(0, int(br.get('qoldiq', 0) or 0))
+                            krovat_inf = krovat_nomini_ajrat(br.get('xona_turi', ''), br.get('izoh', ''))
+                            krovat_qisqa = f" [{krovat_inf}]" if krovat_inf else ""
                             vik_icon = "🔒 " if "To'liq band" in str(br.get('xona_turi', '')) else ""
 
                             bar_html = (
                                 f"<td colspan='{span_len}'>"
                                 f"<div class='ysh-bar' style='background:{b_col};'>"
-                                f"{vik_icon}{m_ism} ({br['odam_soni']}k)"
+                                f"{vik_icon}{m_ism} ({br['odam_soni']}k){krovat_qisqa}"
                                 f"<div class='ysh-tip'>"
                                 f"<b>{m_ism}</b><br>"
+                                f"<b>Joy (Krovat):</b> {krovat_inf or 'Standart'}<br>"
                                 f"<b>Telefon:</b> {m_tel}<br>"
                                 f"<b>Kelish:</b> {br.get('sana') or br['kirish_sanasi']}<br>"
                                 f"<b>Ketish:</b> {br['chiqish_sanasi']} (12:00)<br>"
@@ -864,7 +1096,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
                 )
 
     st.markdown("---")
-    st.subheader("🔍 Xona tafsilotlarini tekshirish")
+    st.subheader("🔍 Xona va Krovatlar (Joylar) holatini tekshirish")
     x_tanlov = st.selectbox("Xonani tanlang:", [f"{x} ({XONA_TOMON_MAP[x]})" for x in XONA_TOMON_MAP.keys()])
     xona_nomi = x_tanlov.split(" (")[0].strip()
     umumiy_sigim = xona_sigimini_ol(xona_nomi)
@@ -873,10 +1105,12 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         st.success(f"🟢 **{xona_nomi} hozir bo'sh ({umumiy_sigim} kishilik) | Tozalik holati: {tozalik_map.get(xona_nomi, 'Toza')}**")
     else:
         for m in bugun_ichidagilar:
+            joy_nom = krovat_nomini_ajrat(m[8], m[7])
+            joy_badge = f" | 🛏️ **{joy_nom}**" if joy_nom else ""
             vik_m = " 🔒 *(To'liq xona vikup)*" if "To'liq band" in str(m[8] or '') else ""
             tel_m = f" | 📞 {m[9]}" if m[9] else ""
             qarz_matni = f" | ⚠️ Qarz: {m[5]:,.0f} UZS" if m[5] > 0 else ""
-            st.markdown(f"- 👤 **{m[0]}** ({m[6]} kishi | {m[1]}{tel_m}{vik_m} | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
+            st.markdown(f"- 👤 **{m[0]}** ({m[6]} kishi | {m[1]}{joy_badge}{tel_m}{vik_m} | 📥 Kirgan: {m[2]} | 🛫 Chiqish: {m[3]} 12:00){qarz_matni}")
 
 # ====================================================
 # SAHIFA 3: 📝 YANGI BRON / QABUL
@@ -886,7 +1120,7 @@ elif sahifa == "📝 Yangi Bron / Qabul":
     render_qabul_formasi("page")
 
 # ====================================================
-# SAHIFA 4: 👥 BRONLAR VA MEHMONLAR
+# SAHIFA 4: 👥 BRONLAR VA MEHMONLAR (JOY/KROVAT O'RNI BILAN!)
 # ====================================================
 elif sahifa == "👥 Bronlar va Mehmonlar":
     st.header("👥 Bronlar va Mehmonlar Boshqaruvi")
@@ -910,7 +1144,13 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         df['izoh'] = df['izoh'].fillna('')
         df['xona_turi'] = df['xona_turi'].fillna('')
         df['kirish_vaqti_korsat'] = df.apply(lambda r: str(r['sana']) if '(' in str(r.get('sana', '')) else f"{r.get('kirish_sanasi', '')} (12:00)", axis=1)
-        df['xona_korsat'] = df.apply(lambda r: f"{r['xona']} 🔒 (To'liq)" if "To'liq band" in str(r.get('xona_turi', '')) else str(r['xona']), axis=1)
+        
+        def xona_va_joy_korsat(r):
+            x_str = f"{r['xona']} 🔒" if "To'liq band" in str(r.get('xona_turi', '')) else str(r['xona'])
+            j_str = krovat_nomini_ajrat(r.get('xona_turi', ''), r.get('izoh', ''))
+            return f"{x_str} ({j_str})" if j_str else x_str
+
+        df['xona_korsat'] = df.apply(xona_va_joy_korsat, axis=1)
 
     if ko_rejim == "📋 Barcha Faol Mehmonlar va Arxiv (Jadval)":
         qidiruv = st.text_input("🔍 Mijoz F.I.O, ID, Xona yoki Izoh bo'yicha qidiruv:", placeholder="Ism, ID, xona yoki izoh...")
@@ -945,7 +1185,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         if not bron_df.empty:
             st.subheader("📅 Oldindan Bron qilinganlar")
             bron_korsatish = bron_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'izoh']].copy()
-            bron_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh (To'liq)"]
+            bron_korsatish.columns = ["ID", "Mijoz", "Xona va Joy", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Izoh (To'liq)"]
             for col in ["Jami Summa", "To'langan"]:
                 bron_korsatish[col] = bron_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
             bron_korsatish["Qoldiq"] = bron_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
@@ -956,7 +1196,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
             faol_korsatish = faol_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'qoldiq', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
             faol_korsatish['holat'] = faol_df.apply(aqlli_holat_matni, axis=1)
             faol_korsatish['chiqish_sanasi'] = faol_korsatish['chiqish_sanasi'] + ' 12:00'
-            faol_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh (To'liq)"]
+            faol_korsatish.columns = ["ID", "Mijoz", "Xona va Joy", "Odam", "Kun", "Jami Summa", "To'langan", "Qoldiq", "Kirish (Sana va Soat)", "Chiqish", "Holat", "Izoh (To'liq)"]
             for col in ["Jami Summa", "To'langan"]:
                 faol_korsatish[col] = faol_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
             faol_korsatish["Qoldiq"] = faol_korsatish["Qoldiq"].apply(format_qoldiq_ustun)
@@ -967,7 +1207,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         with st.expander(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar — Davr: {g_davr_nomi} ({len(arxiv_df)} ta)", expanded=bool(qidiruv and not arxiv_df.empty)):
             if not arxiv_df.empty:
                 arx_korsatish = arxiv_df[['mijoz_id', 'mijoz', 'xona_korsat', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'kirish_vaqti_korsat', 'chiqish_sanasi', 'holat', 'izoh']].copy()
-                arx_korsatish.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Holat", "Izoh (To'liq)"]
+                arx_korsatish.columns = ["ID", "Mijoz", "Xona va Joy", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Holat", "Izoh (To'liq)"]
                 for col in ["Jami Summa", "To'langan"]:
                     arx_korsatish[col] = arx_korsatish[col].apply(lambda x: f"{int(x):,} UZS")
                 st.dataframe(arx_korsatish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(arx_korsatish))
@@ -980,7 +1220,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         else:
             tanlangan_folio = st.selectbox(
                 "🔍 Tafsilotlarini ko'rish uchun mehmonni tanlang:",
-                df['mijoz_id'] + " — " + df['mijoz'] + " (" + df['xona'] + " | " + df['holat'] + ")"
+                df['mijoz_id'] + " — " + df['mijoz'] + " (" + df['xona_korsat'] + " | " + df['holat'] + ")"
             )
             f_id = tanlangan_folio.split(" — ")[0]
             f_row = df[df['mijoz_id'] == f_id].iloc[0]
@@ -993,7 +1233,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     st.caption(f"📞 Telefon: **{f_row.get('telefon') or 'Kiritilmagan'}** | 🆔 Bron ID: `#{f_id}` | {hol_badge}")
                 with fc2:
                     st.markdown(f"**📥 KIRISH:** `{f_row['kirish_vaqti_korsat']}`  ➔  **🛫 CHIQISH:** `{f_row['chiqish_sanasi']} 12:00`")
-                    st.caption(f"🛏 Xona: **{f_row['xona']}** ({f_row.get('xona_turi') or 'Standart'}) • Mehmon: **{f_row['odam_soni']} kishi** ({f_row['kunlar']} kecha)")
+                    st.caption(f"🛏 Xona va Joy: **{f_row['xona_korsat']}** • Mehmon: **{f_row['odam_soni']} kishi** ({f_row['kunlar']} kecha)")
 
                 b_c1, b_c2, b_c3 = st.columns(3, gap="medium")
                 b_c1.metric("💰 JAMI HISOB", f"{int(f_row['faktik_narx']):,} UZS")
@@ -1028,7 +1268,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     f"<hr style='border:1px solid #cbd5e1;'>"
                     f"<p style='color:#0f172a;'><b>Mehmon:</b> {f_row['mijoz']} ({f_row['odam_soni']} kishi)<br>"
                     f"<b>Telefon:</b> {f_row.get('telefon') or '—'}<br>"
-                    f"<b>Joylashgan xona:</b> {f_row['xona']} ({f_row.get('xona_turi') or 'Standart'})<br>"
+                    f"<b>Joylashgan xona va joy:</b> {f_row['xona_korsat']}<br>"
                     f"<b>Kirish vaqti:</b> {f_row['kirish_vaqti_korsat']}<br>"
                     f"<b>Chiqish vaqti:</b> {f_row['chiqish_sanasi']} (soat 12:00)<br>"
                     f"<b>Yashash muddati:</b> {f_row['kunlar']} kecha</p>"
@@ -1052,8 +1292,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     kunlik_qatorlar.append({
                         "Sana (Kecha)": s_kun,
                         "Kim uchun bandlangan": f_row['mijoz'],
-                        "Xona turi": f_row.get('xona_turi') or "Standart",
-                        "Xona raqami": f_row['xona'],
+                        "Xona va Joy": f_row['xona_korsat'],
                         "Narx / Kecha": f"{int(f_row.get('kunlik_narx') or 0):,} UZS"
                     })
                 st.dataframe(pd.DataFrame(kunlik_qatorlar), use_container_width=True, hide_index=True)
@@ -1097,7 +1336,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         if amal_tanlov == "💳 Qarzni yopish":
             qarzdorlar = df[(df['qoldiq'] > 0) & (df['holat'] != 'Chiqib ketgan')] if not df.empty else pd.DataFrame()
             if not qarzdorlar.empty:
-                tanlangan_qarz = st.selectbox("Qarzdor mijozni tanlang:", qarzdorlar['mijoz_id'] + " - " + qarzdorlar['mijoz'] + " (" + qarzdorlar['xona'] + " | Qarzi: " + qarzdorlar['qoldiq'].astype(int).astype(str) + " UZS)")
+                tanlangan_qarz = st.selectbox("Qarzdor mijozni tanlang:", qarzdorlar['mijoz_id'] + " - " + qarzdorlar['mijoz'] + " (" + qarzdorlar['xona_korsat'] + " | Qarzi: " + qarzdorlar['qoldiq'].astype(int).astype(str) + " UZS)")
                 q_id = tanlangan_qarz.split(" - ")[0]
                 q_row = qarzdorlar[qarzdorlar['mijoz_id'] == q_id].iloc[0]
                 joriy_qarz_sum = int(q_row['qoldiq'])
@@ -1129,7 +1368,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         elif amal_tanlov == "➕ Muddatni cho'zish":
             if not barcha_faol_va_bron.empty:
                 with st.form("muddat_form", enter_to_submit=False):
-                    tanlangan_id_chozish = st.selectbox("Mijozni tanlang:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (" + barcha_faol_va_bron['xona'] + ")")
+                    tanlangan_id_chozish = st.selectbox("Mijozni tanlang:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (" + barcha_faol_va_bron['xona_korsat'] + ")")
                     qoshimcha_kun = st.number_input("Necha kun qo'shilmoqda?", min_value=1, value=1)
                     if st.form_submit_button("➕ Muddatni cho'zish", type="primary", use_container_width=True):
                         m_id = tanlangan_id_chozish.split(" - ")[0]
@@ -1164,8 +1403,9 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
         elif amal_tanlov == "🛏 Xonadan-xonaga ko'chirish":
             if not barcha_faol_va_bron.empty:
                 with st.form("kochirish_form", enter_to_submit=False):
-                    koch_mijoz = st.selectbox("Ko'chiriladigan mijoz:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (Hozir: " + barcha_faol_va_bron['xona'] + ")")
+                    koch_mijoz = st.selectbox("Ko'chiriladigan mijoz:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (Hozir: " + barcha_faol_va_bron['xona_korsat'] + ")")
                     y_xona_toliq = st.selectbox("Yangi Xonani tanlang:", BARCHA_XONALAR_ROYXATI)
+                    koch_krovat_str = st.text_input("🛏️ Yangi xonadagi joyi (masalan: Chapdan 1-joy yoki O'ngdan 2-joy):", value="Chapdan 1-joy")
                     koch_toliq_band = st.checkbox("🔒 Yangi xonani to'liq band qilish (Vikup)")
                     if st.form_submit_button("🔄 Xonani almashtirish", type="primary", use_container_width=True):
                         k_id = koch_mijoz.split(" - ")[0]
@@ -1190,7 +1430,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             st.error(f"🚻 Xatolik: {y_xona} da hozir **{zid_jins}** mijoz(lar) bor! Umumiy xonaga **{m_jins}** mijozni ko'chirib bo'lmaydi.")
                         else:
                             baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
-                            y_xona_turi = f"To'liq band ({baz_tur})" if (koch_toliq_band or y_tomon == "O'rtadagi") else baz_tur
+                            kr_b = f" [🛏️ {koch_krovat_str.strip()}]" if (y_tomon != "O'rtadagi" and koch_krovat_str.strip()) else ""
+                            y_xona_turi = f"To'liq band ({baz_tur}){kr_b}" if (koch_toliq_band or y_tomon == "O'rtadagi") else f"{baz_tur}{kr_b}"
                             db.execute("UPDATE bronlar SET tomon=?, xona=?, xona_turi=? WHERE mijoz_id=?", (y_tomon, y_xona, y_xona_turi, k_id))
                             xona_tozalik_ozgartir(eski_xona, "Tozalash kerak")
                             jurnalga_yozish(k_id, xodim_ismi, "Xona ko'chirildi", f"{k_data['mijoz']}: {eski_xona} -> {y_xona} ({y_xona_turi})")
@@ -1202,7 +1443,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
 
         elif amal_tanlov == "🚪 Checkout (Xonani bo'shatish / Vozvrat)":
             if not barcha_faol_va_bron.empty:
-                chiq_tanlov = st.selectbox("Xonani topshirayotgan mijozni tanlang:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (" + barcha_faol_va_bron['xona'] + " | Chiqish: " + barcha_faol_va_bron['chiqish_sanasi'] + ")")
+                chiq_tanlov = st.selectbox("Xonani topshirayotgan mijozni tanlang:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (" + barcha_faol_va_bron['xona_korsat'] + " | Chiqish: " + barcha_faol_va_bron['chiqish_sanasi'] + ")")
                 c_id = chiq_tanlov.split(" - ")[0]
                 c_row = barcha_faol_va_bron[barcha_faol_va_bron['mijoz_id'] == c_id].iloc[0]
 
@@ -1257,7 +1498,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
 
         elif amal_tanlov == "✏️ Mijoz ma'lumotlarini tahrirlash":
             if not df.empty:
-                tahrir_tanlov = st.selectbox("Tahrirlanadigan mijozni tanlang:", df['mijoz_id'] + " - " + df['mijoz'] + " (" + df['xona'] + " | " + df['holat'] + ")")
+                tahrir_tanlov = st.selectbox("Tahrirlanadigan mijozni tanlang:", df['mijoz_id'] + " - " + df['mijoz'] + " (" + df['xona_korsat'] + " | " + df['holat'] + ")")
                 t_id = tahrir_tanlov.split(" - ")[0]
                 t_row = df[df['mijoz_id'] == t_id].iloc[0]
 
@@ -1272,6 +1513,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 joriy_xona_idx = idx
                                 break
                         y_xona_str = st.selectbox("Xona:", BARCHA_XONALAR_ROYXATI, index=joriy_xona_idx)
+                        eski_krovat = krovat_nomini_ajrat(t_row.get('xona_turi', ''), t_row.get('izoh', '')) or "Chapdan 1-joy"
+                        y_krovat_str = st.text_input("🛏️ Krovat / Joy o'rni (masalan: Chapdan 2-joy):", value=eski_krovat)
                         y_odam = st.number_input("Odam soni:", min_value=1, max_value=10, value=int(t_row['odam_soni'] or 1))
                         eski_vikup = "To'liq band" in str(t_row.get('xona_turi', '') or '')
                         y_vikup = st.checkbox("🔒 Xona to'liq band (Vikup)", value=eski_vikup)
@@ -1296,7 +1539,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         y_xona = y_xona_str.split(" | ")[1].split(" (")[0].strip()
                         y_sigim = XONALAR[y_tomon][y_xona][0]
                         baz_tur = "Dvuxspalniy" if y_tomon == "O'rtadagi" else ("2 alohida krovat" if y_sigim == 2 else f"{y_sigim} kishilik")
-                        y_xona_turi = f"To'liq band ({baz_tur})" if (y_vikup or y_tomon == "O'rtadagi") else baz_tur
+                        kr_tag = f" [🛏️ {y_krovat_str.strip()}]" if (y_tomon != "O'rtadagi" and y_krovat_str.strip()) else ""
+                        y_xona_turi = f"To'liq band ({baz_tur}){kr_tag}" if (y_vikup or y_tomon == "O'rtadagi") else f"{baz_tur}{kr_tag}"
                         y_kirish_str = y_kirish.strftime("%Y-%m-%d")
                         y_sana_vaqt_toliq = f"{y_kirish_str} ({y_soat.strip()})"
                         y_chiqish_str = (y_kirish + timedelta(days=y_kunlar)).strftime("%Y-%m-%d")
@@ -1304,12 +1548,15 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         if y_holat != "Chiqib ketgan":
                             y_holat = "To'langan" if y_qoldiq <= 0 else "Qarzdorlik"
 
+                        toza_izoh = re.sub(r'\[🛏️ .*?\]', '', y_izoh).strip()
+                        yak_izoh = f"{kr_tag.strip()} {toza_izoh}".strip()
+
                         db.execute("""
                             UPDATE bronlar SET 
                                 mijoz=?, tomon=?, xona=?, xona_turi=?, odam_soni=?, sana=?, kirish_sanasi=?, chiqish_sanasi=?,
                                 kunlar=?, faktik_narx=?, jami_summa=?, tolagan_summa=?, qoldiq=?, holat=?, izoh=?
                             WHERE mijoz_id=?
-                        """, (y_ism.strip(), y_tomon, y_xona, y_xona_turi, y_odam, y_sana_vaqt_toliq, y_kirish_str, y_chiqish_str, y_kunlar, y_faktik, y_faktik, y_tolagan, y_qoldiq, y_holat, y_izoh.strip(), t_id))
+                        """, (y_ism.strip(), y_tomon, y_xona, y_xona_turi, y_odam, y_sana_vaqt_toliq, y_kirish_str, y_chiqish_str, y_kunlar, y_faktik, y_faktik, y_tolagan, y_qoldiq, y_holat, yak_izoh, t_id))
                         
                         farq_tolov = y_tolagan - eski_tolagan
                         if farq_tolov != 0:
@@ -1370,7 +1617,7 @@ elif sahifa == "🧹 Xona tozalash":
             cols_tk = st.columns(6, gap="small")
             for idx, (x_n, t_n) in enumerate(tozalash_kerak_list):
                 with cols_tk[idx % 6]:
-                    st.markdown(f"<div style='border:2px solid #ef4444; background:rgba(239,68,68,0.12); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.75;'>{t_n}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='border:2px solid #ef4444; background:rgba(239,68,68,0.12); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
                     if st.button("✨ Toza bo'ldi", key=f"clean_{x_n}", use_container_width=True):
                         xona_tozalik_ozgartir(x_n, "Toza")
                         jurnalga_yozish("Housekeeping", xodim_ismi, "Xona tozalandi", f"{x_n} toza holatga o'tkazildi")
@@ -1385,7 +1632,7 @@ elif sahifa == "🧹 Xona tozalash":
             cols_bt = st.columns(6, gap="small")
             for idx, (x_n, t_n) in enumerate(bosh_toza_list):
                 with cols_bt[idx % 6]:
-                    st.markdown(f"<div style='border:1px solid #334155; background:rgba(34,197,94,0.08); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.75;'>{t_n}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='border:1px solid #334155; background:rgba(34,197,94,0.08); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
                     if st.button("🧹 Tozalash kk", key=f"dirty_{x_n}", use_container_width=True):
                         xona_tozalik_ozgartir(x_n, "Tozalash kerak")
                         st.rerun()
@@ -1398,7 +1645,7 @@ elif sahifa == "🧹 Xona tozalash":
             cols_bd = st.columns(6, gap="small")
             for idx, (x_n, t_n) in enumerate(band_list):
                 with cols_bd[idx % 6]:
-                    st.markdown(f"<div style='border:1px solid #7c3aed; background:rgba(124,58,237,0.1); padding:10px; border-radius:10px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:11px; opacity:0.75;'>{t_n}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='border:1px solid #7c3aed; background:rgba(124,58,237,0.1); padding:10px; border-radius:10px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:11px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
                     if st.button("🧹 Tozalash kk", key=f"dirty_b_{x_n}", use_container_width=True):
                         xona_tozalik_ozgartir(x_n, "Tozalash kerak")
                         st.rerun()
