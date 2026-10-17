@@ -94,10 +94,6 @@ def sozlamani_saqla(kalit, qiymat):
         db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
 
 def dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False):
-    """
-    CEO tomonidan Sozlamalar bo'limida o'zgartirilgan tariflar va chegirmalar asosida
-    barcha adminlar uchun avtomatik hisoblaydigan dinamik kalkulyator.
-    """
     soz = sozlamalarni_ol()
     sigim = XONALAR[tomon][xona][0]
     hisob_odam = sigim if toliq_xona else odam_soni
@@ -179,7 +175,6 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #f8fafc !important;
         }
 
-        /* Barcha tugmalar va Chap menyudagi zamonaviy Menyu Bar tugmalari */
         .stButton > button, .stDownloadButton > button {
             background-color: #171c2e !important;
             color: #e2e8f0 !important;
@@ -419,7 +414,6 @@ else:
 if st.session_state.faol_sahifa not in menyu_variantlar:
     st.session_state.faol_sahifa = "🏠 Boshqaruv paneli"
 
-# RADIO PANEL O'RNIGA HAQIQIY ZAMONAVIY MENYU TUGMALARI!
 for m_item in menyu_variantlar:
     is_active = (st.session_state.faol_sahifa == m_item)
     if st.sidebar.button(
@@ -2036,7 +2030,6 @@ elif sahifa == "⚙️ Sozlamalar":
             )
 
     st.write("")
-    # BARCHA ADMINLAR VA CEO UCHUN KO'RINADIGAN AMALDAGI REGLAMENT VA TARIFLAR PANELI
     with st.container(border=True):
         st.subheader("📋 Hostel Xonalar Fondi, Standart Tariflar va Ichki Reglament")
         st.caption("Quyidagi tariflar va qoidalar CEO tomonidan tasdiqlangan bo'lib, barcha adminlar uchun Qabul bo'limida avtomatik amal qiladi.")
@@ -2057,7 +2050,6 @@ elif sahifa == "⚙️ Sozlamalar":
         with r_c3:
             st.info(joriy_soz.get("reg_ong", ""))
 
-        # FAQAT CEO UCHUN: TARIFLAR, CHEGIRMALAR VA REGLAMENTNI TAHRIRLASH BLOKI!
         if st.session_state.role == "ceo":
             st.write("")
             with st.expander("👑 ✏️ Tariflar, Chegirmalar va Ichki Reglamentni tahrirlash (Faqat CEO huquqi bilan)", expanded=False):
