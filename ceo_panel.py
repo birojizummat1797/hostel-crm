@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti, xona_tozalik_ozgartir
+from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti, xona_tozalik_ozgartir, chiroyli_kartochka
 from tg_bot import tg_xabar_yubor
 
 def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=None, g_davr_nomi="Barcha vaqt"):
@@ -11,7 +11,7 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tug
 
     if tanlov == "➖ Yangi Xarajat kiritish":
         with st.form("xarajat_form", clear_on_submit=True, enter_to_submit=False):
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns(2, gap="medium")
             with c1:
                 kat = st.selectbox("Xarajat turi:", ["Xo'jalik va Tozalik vositalari", "Kommunal to'lovlar", "Oziq-ovqat (Non, choy...)", "Ta'mirlash (Santexnik, usta...)", "Xodimlar avansi / maoshi", "Boshqa xarajat"])
                 summa = st.number_input("Xarajat summasi (UZS):", min_value=1000, step=5000)
@@ -41,11 +41,11 @@ def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tug
         umumiy_xarajat = df_xar['summa'].sum() if not df_xar.empty else 0
         sof_naqd_kassa = naqd_tushum - naqd_xarajat
 
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("💵 Bugungi Naqd Kirim", f"{naqd_tushum:,.0f} UZS")
-        k2.metric("💳 Bugungi Karta/Onlayn", f"{karta_tushum:,.0f} UZS")
-        k3.metric("➖ Jami Xarajatlar", f"{umumiy_xarajat:,.0f} UZS")
-        k4.metric("🏦 Kassadagi Sof Naqd", f"{sof_naqd_kassa:,.0f} UZS")
+        k1, k2, k3, k4 = st.columns(4, gap="medium")
+        with k1: st.markdown(chiroyli_kartochka("💵", "Bugungi Naqd Kirim", f"{naqd_tushum:,.0f} UZS", "#10b981"), unsafe_allow_html=True)
+        with k2: st.markdown(chiroyli_kartochka("💳", "Bugungi Karta/Onlayn", f"{karta_tushum:,.0f} UZS", "#3b82f6"), unsafe_allow_html=True)
+        with k3: st.markdown(chiroyli_kartochka("➖", "Jami Xarajatlar", f"{umumiy_xarajat:,.0f} UZS", "#ef4444"), unsafe_allow_html=True)
+        with k4: st.markdown(chiroyli_kartochka("🏦", "Kassadagi Sof Naqd", f"{sof_naqd_kassa:,.0f} UZS", "#8b5cf6"), unsafe_allow_html=True)
 
         with st.form("smena_form", clear_on_submit=True, enter_to_submit=False):
             smena_izoh = st.text_area("Smena bo'yicha izoh (ixtiyoriy):", placeholder="Smena tinch o'tdi, kalitlar va kassa topshirildi...")
@@ -98,7 +98,6 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
 
     if ceo_tanlov == "📊 Davriy Hisobot (Sklad va Xarajat)":
         st.subheader(f"📦 Sklad, Market Savdolar va Mayda Xarajatlar Hisoboti — {g_davr_nomi}")
-        st.info(f"📅 Hisobot davri: **{g_davr_nomi}**")
 
         if g_bosh_sana and g_tugash_sana:
             df_h_savdo = db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
@@ -115,10 +114,14 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
         jami_xarajat_sum = df_h_xarajat['summa'].fillna(0).sum() if not df_h_xarajat.empty else 0
         ombor_qiymati = (df_h_ombor['narxi'].fillna(0) * df_h_ombor['qoldiq'].fillna(0)).sum() if not df_h_ombor.empty else 0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric(f"🛒 Davr ichida Market Savdosi ({len(df_h_savdo)} ta)", f"{jami_savdo_sum:,.0f} UZS")
-        m2.metric(f"➖ Davr ichida Mayda Xarajatlar ({len(df_h_xarajat)} ta)", f"{jami_xarajat_sum:,.0f} UZS")
-        m3.metric("📦 Hozirgi Skladdagi Tovarlar Qiymati", f"{ombor_qiymati:,.0f} UZS")
+        # 1-SKRINSHOT TUZATISHI: Xira metric o'rniga yorqin oq yozuvli kartochkalar!
+        m1, m2, m3 = st.columns(3, gap="medium")
+        with m1:
+            st.markdown(chiroyli_kartochka("🛒", f"Davr ichida Market Savdosi ({len(df_h_savdo)} ta)", f"{jami_savdo_sum:,.0f} UZS", "#10b981"), unsafe_allow_html=True)
+        with m2:
+            st.markdown(chiroyli_kartochka("➖", f"Davr ichida Mayda Xarajatlar ({len(df_h_xarajat)} ta)", f"{jami_xarajat_sum:,.0f} UZS", "#f59e0b"), unsafe_allow_html=True)
+        with m3:
+            st.markdown(chiroyli_kartochka("📦", "Hozirgi Skladdagi Tovarlar Qiymati", f"{ombor_qiymati:,.0f} UZS", "#8b5cf6"), unsafe_allow_html=True)
 
         st.download_button(
             label=f"📥 Tanlangan davr ({g_davr_nomi}) bo'yicha To'liq Hisobotni Yuklab Olish (Excel)",
@@ -177,8 +180,8 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
             st.markdown("---")
             st.subheader(f"🗄️ Arxivdagi (Chiqib ketgan) mijozlar — {g_davr_nomi} ({len(arxivdagilar)} ta)")
             if not arxivdagilar.empty:
-                arx_view = arxivdagilar[['mijoz_id', 'mijoz', 'xona', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'sana', 'chiqish_sanasi', 'izoh']].copy()
-                arx_view.columns = ["ID", "Mijoz", "Xona", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Izoh"]
+                arx_view = arxivdagilar[['mijoz_id', 'mijoz', 'xona', 'joy_raqami', 'odam_soni', 'kunlar', 'faktik_narx', 'tolagan_summa', 'sana', 'chiqish_sanasi', 'izoh']].copy()
+                arx_view.columns = ["ID", "Mijoz", "Xona", "Joy (Krovat)", "Odam", "Kun", "Jami Summa", "To'langan", "Kirgan Vaqti", "Chiqib Ketgan Sana", "Izoh"]
                 for col in ["Jami Summa", "To'langan"]: arx_view[col] = arx_view[col].apply(lambda x: f"{int(x or 0):,} UZS")
                 st.dataframe(arx_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(arx_view))
             else:
@@ -188,7 +191,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
 
     elif ceo_tanlov == "👥 Xodimlar va Rollar":
         st.subheader("👥 Barcha xodimlar va Rollar")
-        c_u1, c_u2 = st.columns([1.2, 1])
+        c_u1, c_u2 = st.columns([1.2, 1], gap="medium")
         with c_u1:
             df_users = db.read_df("SELECT login, ism, role, parol FROM xodimlar")
             df_users["Holat"] = "🟢 Faol"

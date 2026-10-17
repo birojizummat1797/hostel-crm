@@ -166,7 +166,7 @@ def get_db():
 db = get_db()
 
 # ==========================================
-# 2. XONALAR RO'YXATI VA JADVALLARNI YARATISH
+# 2. XONALAR RO'YXATI VA JOYLAR (CHAPDAN O'NGGA)
 # ==========================================
 XONALAR = {
     "Chap tomon": {"1-xona": (4, 100000), "2-xona": (4, 100000), "3-xona": (4, 100000), "4-xona": (4, 100000), "5-xona": (4, 100000), "6-xona": (4, 100000), "7-xona": (2, 150000), "8-xona": (4, 100000), "9-xona": (4, 100000), "10-xona": (3, 110000), "11-xona": (2, 150000), "12-xona": (4, 100000), "13-xona": (4, 100000), "14-xona": (2, 150000)},
@@ -188,6 +188,53 @@ for t_nomi, x_dict in XONALAR.items():
 
 MUDDATLAR = {"Kunlik": 1, "1 hafta (7 kun)": 7, "10 kun": 10, "15 kun": 15, "1 oylik (30 kun)": 30}
 
+def xona_joylar_royxati(tomon, xona_nomi):
+    """
+    Bosh boshqaruvchi talabi bo'yicha:
+    Dvuxspalniydan (O'rtadagi 15-21 xonalar) tashqari barcha xonalarda
+    chapdan o'ngga qarab krovat/joy nomlarini qaytaradi.
+    """
+    if tomon == "O'rtadagi":
+        return ["Dvuxspalniy (Umumiy)"]
+    sigim = xona_sigimini_ol(xona_nomi)
+    if sigim == 2:
+        return ["1-joy (Chap krovat)", "2-joy (O'ng krovat)"]
+    elif sigim == 3:
+        return ["1-joy (Chap chetki)", "2-joy (O'rta krovat)", "3-joy (O'ng chetki)"]
+    else:
+        return [
+            "1-joy (Chapdan 1-krovat)",
+            "2-joy (Chapdan 2-krovat)",
+            "3-joy (O'ngdan 2-krovat)",
+            "4-joy (O'ng chetki krovat)"
+        ]
+
+def xonadagi_band_joy_nomlari(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
+    """Tanlangan sanalarda xonadagi qaysi joylar (1-joy, 2-joy...) bandligini qaytaradi"""
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT joy_raqami, xona_turi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT joy_raqami, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
+            (xona_nomi, chiqish_str, kirish_str)
+        )
+    band_nomlar = set()
+    tomon = XONA_TOMON_MAP.get(xona_nomi, "Chap tomon")
+    barcha_j = xona_joylar_royxati(tomon, xona_nomi)
+    for j_str, x_tur in rows:
+        if "To'liq band" in str(x_tur or ''):
+            return set(barcha_j)
+        if j_str:
+            for qism in str(j_str).split(","):
+                q_clean = qism.strip()
+                for bj in barcha_j:
+                    if q_clean in bj or bj.split(" ")[0] == q_clean.split(" ")[0]:
+                        band_nomlar.add(bj)
+    return band_nomlar
+
 @st.cache_resource
 def init_db():
     db.execute("""
@@ -198,7 +245,7 @@ def init_db():
             kunlik_narx REAL, jami_summa REAL, faktik_narx REAL, tolagan_summa REAL,
             qoldiq REAL, tolov_turi TEXT, tolov_tafsiloti TEXT, holat TEXT,
             kirish_sanasi TEXT, chiqish_sanasi TEXT, bron_turi TEXT DEFAULT 'Hozir kirish',
-            izoh TEXT DEFAULT '', telefon TEXT DEFAULT ''
+            izoh TEXT DEFAULT '', telefon TEXT DEFAULT '', joy_raqami TEXT DEFAULT ''
         )
     """)
 
@@ -270,6 +317,7 @@ def init_db():
         "ALTER TABLE bronlar ADD COLUMN bron_turi TEXT DEFAULT 'Hozir kirish'", 
         "ALTER TABLE bronlar ADD COLUMN izoh TEXT DEFAULT ''",
         "ALTER TABLE bronlar ADD COLUMN telefon TEXT DEFAULT ''",
+        "ALTER TABLE bronlar ADD COLUMN joy_raqami TEXT DEFAULT ''",
         "ALTER TABLE mahsulotlar ADD COLUMN sub_kategoriya TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN hajmi TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN izoh TEXT DEFAULT ''",
@@ -443,7 +491,7 @@ def avto_kenglik_sozla(df):
         if any(k in col_lower for k in ["izoh", "tafsilot", "batafsil", "ma'lumot", "to'lov turi"]):
             px = max(280, min(max_len * 9 + 40, 1200))
             config[col] = st.column_config.Column(label=str(col), width=px)
-        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt", "xona"]):
+        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt", "xona", "joy"]):
             px = max(160, min(max_len * 9 + 30, 500))
             config[col] = st.column_config.Column(label=str(col), width=px)
     return config
@@ -481,18 +529,18 @@ def chiroyli_kartochka(icon, title, value, bg_color):
     is_dark = st.session_state.get("ui_tema", "🌙 Qorong'u (Dark UI)") == "🌙 Qorong'u (Dark UI)"
     if is_dark:
         return (
-            f"<div style='background: #141724; border: 1px solid #262b40; border-top: 4px solid {bg_color}; "
-            f"padding: 16px; border-radius: 14px; color: #f8fafc; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
-            f"margin-bottom: 18px; font-family: sans-serif;'>"
-            f"<div style='font-size: 13px; color: #94a3b8; font-weight: 500; margin-bottom: 6px;'>{icon} {title}</div>"
-            f"<div style='font-size: 22px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
+            f"<div style='background: #141724; border: 1px solid #2d344d; border-top: 4px solid {bg_color}; "
+            f"padding: 16px; border-radius: 14px; color: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
+            f"margin-bottom: 16px; font-family: sans-serif;'>"
+            f"<div style='font-size: 13px; color: #cbd5e1; font-weight: 600; margin-bottom: 6px;'>{icon} {title}</div>"
+            f"<div style='font-size: 23px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
         )
     return (
         f"<div style='background: linear-gradient(135deg, {bg_color} 0%, {bg_color}dd 100%); "
         f"padding: 16px; border-radius: 14px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.12); "
-        f"margin-bottom: 18px; font-family: sans-serif;'>"
+        f"margin-bottom: 16px; font-family: sans-serif;'>"
         f"<div style='font-size: 13px; font-weight: 600; opacity: 0.95; margin-bottom: 6px;'>{icon} {title}</div>"
-        f"<div style='font-size: 22px; font-weight: bold; color: white;'>{value}</div></div>"
+        f"<div style='font-size: 23px; font-weight: bold; color: white;'>{value}</div></div>"
     )
 
 def rangla_jadval(row):
@@ -516,7 +564,7 @@ def rangla_jadval(row):
         
     if is_dark:
         if holat_val == 'Chiqib ketgan':
-            return ['background-color: #1e293b; color: #94a3b8'] * len(row)
+            return ['background-color: #1e293b; color: #cbd5e1'] * len(row)
         elif qoldiq_val > 0:
             return ['background-color: #451a1a; color: #fca5a5; font-weight: 600'] * len(row)
         elif (chiqish_raw == bugun_str and soat >= 6) or (chiqish_raw != '' and chiqish_raw < bugun_str):
@@ -534,17 +582,10 @@ def rangla_jadval(row):
             return ['background-color: #f0fdf4; color: #15803d'] * len(row)
 
 def tema_css_yuklash(tema_nomi):
-    """
-    Professional UI/UX CSS:
-    - Modal oyna (st.dialog), tugmalar (st.button, st.download_button) va inputlar hech qachon oqarib ko'rinmay qolmaydi.
-    - Chap menyu (Sidebar) bo'limlari orasi ochiq, alohida-alohida kartochka-tugma ko'rinishida chiqadi.
-    - Barcha matnlar va bloklar orasida nafas oladigan masofa (spacing) ta'minlanadi.
-    """
     umumiy_nav_css = (
         ".block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important; }"
         "h1, h2, h3 { letter-spacing: -0.3px; margin-bottom: 0.7rem !important; }"
         "div[data-testid='stVerticalBlock'] > div { margin-bottom: 0.25rem; }"
-        # /* Chap menyudagi Asosiy Menyu radio tugmalarini zamonaviy alohida tugmalarga aylantirish */
         "section[data-testid='stSidebar'] div[role='radiogroup'] { gap: 7px !important; }"
         "section[data-testid='stSidebar'] div[role='radiogroup'] > label { "
         "padding: 10px 14px !important; border-radius: 10px !important; width: 100% !important; "
@@ -572,18 +613,15 @@ def tema_css_yuklash(tema_nomi):
             "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #ffffff !important; }"
             ".stForm, div[data-testid='stExpander'] { background-color: #141724 !important; border: 1px solid #262b40 !important; border-radius: 14px !important; padding: 14px !important; }"
             ".stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label { color: #f1f5f9 !important; }"
-            # /* 4-SKRINSHOT TUZATISHI: Barcha oddiy va yuklab olish tugmalari qora-kulrang fonda aniq oq yozuv bilan chiqadi */
             ".stButton > button, .stDownloadButton > button { "
             "background-color: #1e2436 !important; color: #f8fafc !important; border: 1px solid #334155 !important; "
             "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; transition: all 0.2s !important; }"
             ".stButton > button p, .stButton > button span, .stDownloadButton > button p, .stDownloadButton > button span { color: #f8fafc !important; }"
             ".stButton > button:hover, .stDownloadButton > button:hover { background-color: #2b334d !important; border-color: #7c3aed !important; }"
-            # /* Primary tugmalar */
             "button[kind='primary'], .stFormSubmitButton > button { "
             "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; "
             "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
             "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
-            # /* 1-SKRINSHOT TUZATISHI: Modal oyna (st.dialog) foni va ichidagi yozuvlar */
             "div[role='dialog'] { background-color: #141724 !important; color: #f8fafc !important; border: 1px solid #334155 !important; border-radius: 16px !important; }"
             "div[role='dialog'] h1, div[role='dialog'] h2, div[role='dialog'] h3, div[role='dialog'] p, div[role='dialog'] label, div[role='dialog'] span { color: #f8fafc !important; }"
             "div[role='dialog'] input { color: #0f172a !important; background-color: #f8fafc !important; }"
