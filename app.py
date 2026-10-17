@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
-    xona_sigimini_ol, xonadagi_band_joyni_hisobla, xona_jinsini_tekshir, narx_hisobla, id_yaratish,
+    xona_sigimini_ol, xonadagi_band_joyni_hisobla, xona_jinsini_tekshir, id_yaratish,
     jurnalga_yozish, barcha_bazani_yuklash, chiroyli_kartochka, rangla_jadval,
     toshkent_vaqti, avto_checkout_tekshir, avto_kenglik_sozla, aqlli_sana_filtri_ui,
     xona_tozalik_ozgartir, barcha_xona_tozalik_ol
@@ -24,6 +24,108 @@ if 'xodim_ismi' not in st.session_state:
     st.session_state.xodim_ismi = ""
 if 'ui_tema' not in st.session_state:
     st.session_state.ui_tema = "🌙 Qorong'u (Dark UI)"
+if 'faol_sahifa' not in st.session_state:
+    st.session_state.faol_sahifa = "🏠 Boshqaruv paneli"
+
+# =========================================================
+# DINAMIK REGLAMENT VA TARIFLAR BAZASI (CEO BOSHQARUVI UCHUN)
+# =========================================================
+def init_reglament_db():
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS tizim_sozlamalari (
+            kalit TEXT PRIMARY KEY,
+            qiymat TEXT
+        )
+    """)
+    standart_sozlamalar = {
+        "narx_4k": "100000",
+        "narx_3k": "110000",
+        "narx_2k": "150000",
+        "narx_luxe_uz": "250000",
+        "narx_luxe_chet": "300000",
+        "ustama_chet": "50000",
+        "chegirma_talaba": "50",
+        "chegirma_hafta": "10",
+        "hisob_soati": "12:00",
+        "reg_chap": (
+            "**🛏️ Chap qanot (1-xonadan 14-xonagacha — 14 ta xona):**\n"
+            "- **4 kishilik xonalar (1, 2, 3, 4, 5, 6, 8, 9, 12, 13):** `100,000 UZS` / kishi\n"
+            "- **3 kishilik xona (10-xona):** `110,000 UZS` / kishi\n"
+            "- **2 kishilik (2 alohida krovat — 7, 11, 14):** `150,000 UZS` / kishi"
+        ),
+        "reg_orta": (
+            "**🛌 O'rta sektor (15-xonadan 21-xonagacha — 7 ta Lyuks xona):**\n"
+            "- **Bitta Dvuxspalniy (15–21-xonalar):**\n"
+            "  - O'zbekiston fuqarolari uchun: `250,000 UZS` (xona narxi)\n"
+            "  - Chet el fuqarolari uchun: `300,000 UZS` (xona narxi)"
+        ),
+        "reg_ong": (
+            "**🛏️ O'ng qanot (22-xonadan 36-xonagacha — 15 ta xona):**\n"
+            "- **2 kishilik (2 alohida krovat — 22, 28, 32):** `150,000 UZS` / kishi\n"
+            "- **4 kishilik xonalar (23, 24, 25, 26, 27, 29, 30, 31, 33, 34, 35, 36):** `100,000 UZS` / kishi\n"
+            "- **Maxsus qoidalar:** Talabalarga `50% chegirma`, 7+ kunga `10% chegirma`, Hisob-kitob soati: har kuni `12:00`."
+        )
+    }
+    try:
+        mavjudlar = db.fetchall("SELECT kalit FROM tizim_sozlamalari")
+        mavjud_set = {r[0] for r in mavjudlar}
+        for k, v in standart_sozlamalar.items():
+            if k not in mavjud_set:
+                db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (k, v))
+    except Exception:
+        pass
+
+init_reglament_db()
+
+def sozlamalarni_ol():
+    natija = {}
+    try:
+        rows = db.fetchall("SELECT kalit, qiymat FROM tizim_sozlamalari")
+        for k, v in rows:
+            natija[k] = v
+    except Exception:
+        pass
+    return natija
+
+def sozlamani_saqla(kalit, qiymat):
+    if db.fetchone("SELECT kalit FROM tizim_sozlamalari WHERE kalit=?", (kalit,)):
+        db.execute("UPDATE tizim_sozlamalari SET qiymat=? WHERE kalit=?", (str(qiymat), kalit))
+    else:
+        db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
+
+def dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False):
+    """
+    CEO tomonidan Sozlamalar bo'limida o'zgartirilgan tariflar va chegirmalar asosida
+    barcha adminlar uchun avtomatik hisoblaydigan dinamik kalkulyator.
+    """
+    soz = sozlamalarni_ol()
+    sigim = XONALAR[tomon][xona][0]
+    hisob_odam = sigim if toliq_xona else odam_soni
+
+    n_4k = float(soz.get("narx_4k", 100000) or 100000)
+    n_3k = float(soz.get("narx_3k", 110000) or 110000)
+    n_2k = float(soz.get("narx_2k", 150000) or 150000)
+    n_luxe_uz = float(soz.get("narx_luxe_uz", 250000) or 250000)
+    n_luxe_chet = float(soz.get("narx_luxe_chet", 300000) or 300000)
+    ustama_chet = float(soz.get("ustama_chet", 50000) or 50000)
+    cheg_talaba = float(soz.get("chegirma_talaba", 50) or 50)
+    cheg_hafta = float(soz.get("chegirma_hafta", 10) or 10)
+
+    if tomon == "O'rtadagi":
+        kunlik = n_luxe_chet if toifa == "Chet el fuqarosi" else n_luxe_uz
+    else:
+        bazaviy_narx = n_2k if sigim == 2 else (n_3k if sigim == 3 else n_4k)
+        if toifa == "Chet el fuqarosi":
+            kunlik = (bazaviy_narx + ustama_chet) * hisob_odam
+        elif toifa == "Talaba (Student)":
+            kunlik = (bazaviy_narx * ((100.0 - cheg_talaba) / 100.0)) * hisob_odam
+        else:
+            kunlik = bazaviy_narx * hisob_odam
+
+    jami = kunlik * kunlar
+    if kunlar >= 7 and cheg_hafta > 0:
+        jami = jami * ((100.0 - cheg_hafta) / 100.0)
+    return kunlik, jami
 
 # =========================================================
 # KORPORATIV UI/UX DIZAYN DVIJOGI (DARK & LIGHT MODE)
@@ -77,66 +179,38 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #f8fafc !important;
         }
 
-        section[data-testid="stSidebar"] div[role="radiogroup"] {
-            gap: 8px !important;
-            margin-top: 6px !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
-            padding: 10px 14px !important;
-            border-radius: 10px !important;
-            width: 100% !important;
-            background-color: #171c2e !important;
-            border: 1px solid #262e48 !important;
-            transition: all 0.18s ease !important;
-            cursor: pointer !important;
-            margin: 0 !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
-            background-color: #212842 !important;
-            border-color: #7c3aed !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child,
-        section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"] + div {
-            display: none !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label p {
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            color: #e2e8f0 !important;
-            margin: 0 !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
-            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
-            border-color: #a78bfa !important;
-            box-shadow: 0 4px 14px rgba(124,58,237,0.4) !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
-            color: #ffffff !important;
-        }
-
+        /* Barcha tugmalar va Chap menyudagi zamonaviy Menyu Bar tugmalari */
         .stButton > button, .stDownloadButton > button {
-            background-color: #1e2436 !important;
-            color: #ffffff !important;
-            border: 1px solid #3b4461 !important;
+            background-color: #171c2e !important;
+            color: #e2e8f0 !important;
+            border: 1px solid #2a324b !important;
             border-radius: 10px !important;
             font-weight: 600 !important;
             padding: 0.55rem 1rem !important;
+            transition: all 0.18s ease !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button {
+            text-align: left !important;
+            justify-content: flex-start !important;
+            padding: 0.62rem 1rem !important;
+            margin-bottom: 2px !important;
         }
         .stButton > button *, .stDownloadButton > button * {
             color: #ffffff !important;
         }
         .stButton > button:hover, .stDownloadButton > button:hover {
-            background-color: #2a324b !important;
+            background-color: #232a45 !important;
             border-color: #8b5cf6 !important;
+            transform: translateX(2px);
         }
         button[kind="primary"], .stFormSubmitButton > button {
             background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
-            border: none !important;
+            border: 1px solid #a78bfa !important;
             color: #ffffff !important;
             border-radius: 10px !important;
             font-weight: 700 !important;
-            padding: 0.6rem 1.2rem !important;
-            box-shadow: 0 4px 12px rgba(124,58,237,0.3) !important;
+            padding: 0.62rem 1.1rem !important;
+            box-shadow: 0 4px 14px rgba(124,58,237,0.4) !important;
         }
         button[kind="primary"] *, .stFormSubmitButton > button * {
             color: #ffffff !important;
@@ -160,7 +234,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
         div[data-testid="stModal"] * {
             color: #f8fafc !important;
         }
-        div[role="dialog"] input, .stApp input[type="text"], .stApp input[type="number"], .stApp input[type="password"] {
+        div[role="dialog"] input, .stApp input[type="text"], .stApp input[type="number"], .stApp input[type="password"], .stApp textarea {
             color: #0f172a !important;
             background-color: #f8fafc !important;
             font-weight: 600 !important;
@@ -189,29 +263,23 @@ def mukammal_ui_ux_sozla(tema_nomi):
         }
         div[data-testid="stMetricLabel"] * { color: #475569 !important; font-weight: 600 !important; }
         div[data-testid="stMetricValue"] * { color: #0f172a !important; font-weight: 800 !important; }
-        section[data-testid="stSidebar"] div[role="radiogroup"] { gap: 8px !important; margin-top: 6px !important; }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
-            padding: 10px 14px !important;
-            border-radius: 10px !important;
-            width: 100% !important;
-            background-color: #f1f5f9 !important;
-            border: 1px solid #cbd5e1 !important;
-            cursor: pointer !important;
-            margin: 0 !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child { display: none !important; }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label p { font-size: 14px !important; font-weight: 600 !important; color: #0f172a !important; margin: 0 !important; }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
-            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
-            border-color: #4f46e5 !important;
-        }
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p { color: #ffffff !important; }
         .stButton > button, .stDownloadButton > button {
-            background-color: #ffffff !important;
+            background-color: #f1f5f9 !important;
             color: #0f172a !important;
             border: 1px solid #cbd5e1 !important;
             border-radius: 10px !important;
             font-weight: 600 !important;
+            transition: all 0.18s ease !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button {
+            text-align: left !important;
+            justify-content: flex-start !important;
+            padding: 0.62rem 1rem !important;
+            margin-bottom: 2px !important;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            background-color: #e2e8f0 !important;
+            border-color: #4f46e5 !important;
         }
         button[kind="primary"], .stFormSubmitButton > button {
             background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
@@ -219,7 +287,8 @@ def mukammal_ui_ux_sozla(tema_nomi):
             border: none !important;
             border-radius: 10px !important;
             font-weight: 700 !important;
-            padding: 0.6rem 1.2rem !important;
+            padding: 0.62rem 1.1rem !important;
+            box-shadow: 0 4px 12px rgba(79,70,229,0.3) !important;
         }
         button[kind="primary"] *, .stFormSubmitButton > button * { color: #ffffff !important; }
         </style>
@@ -299,7 +368,7 @@ if not st.session_state.logged_in:
 avto_checkout_tekshir()
 
 # ==========================================
-# 2. CHAP MENYU VA TEMA
+# 2. ZAMONAVIY MENYU BAR (RADIO NUQTALARSIZ, TO'LIQ TUGMALI SIDEBAR!)
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
@@ -319,7 +388,7 @@ mukammal_ui_ux_sozla(tanlangan_tema)
 is_dark = (tanlangan_tema == "🌙 Qorong'u (Dark UI)")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("<div style='font-size:12px; font-weight:800; letter-spacing:1px; margin-bottom:6px;'>ASOSIY BO'LIMLAR</div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='font-size:11.5px; font-weight:800; letter-spacing:1.2px; opacity:0.8; margin-bottom:8px;'>🧭 ASOSIY MENYU BAR</div>", unsafe_allow_html=True)
 
 if st.session_state.role == "ceo":
     menyu_variantlar = [
@@ -347,7 +416,22 @@ else:
         "⚙️ Sozlamalar"
     ]
 
-sahifa = st.sidebar.radio("Bo'limni tanlang:", menyu_variantlar, label_visibility="collapsed")
+if st.session_state.faol_sahifa not in menyu_variantlar:
+    st.session_state.faol_sahifa = "🏠 Boshqaruv paneli"
+
+# RADIO PANEL O'RNIGA HAQIQIY ZAMONAVIY MENYU TUGMALARI!
+for m_item in menyu_variantlar:
+    is_active = (st.session_state.faol_sahifa == m_item)
+    if st.sidebar.button(
+        m_item,
+        key=f"nav_btn_{m_item}",
+        type="primary" if is_active else "secondary",
+        use_container_width=True
+    ):
+        st.session_state.faol_sahifa = m_item
+        st.rerun()
+
+sahifa = st.session_state.faol_sahifa
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("##### 🔍 Global CRM Davr Filtri")
@@ -374,6 +458,11 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
 # YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
 # =========================================================
 def render_qabul_formasi(form_key_suffix="main"):
+    soz = sozlamalarni_ol()
+    cheg_hafta_foiz = int(float(soz.get("chegirma_hafta", 10) or 10))
+    cheg_talaba_foiz = int(float(soz.get("chegirma_talaba", 50) or 50))
+    hisob_soat_str = soz.get("hisob_soati", "12:00")
+
     c_top1, c_top2 = st.columns([1.5, 1.5], gap="medium")
     with c_top1:
         tomon = st.radio(
@@ -413,7 +502,7 @@ def render_qabul_formasi(form_key_suffix="main"):
             mijoz_ism = st.text_input("👤 Mehmon F.I.O (Ismi) *")
             mijoz_tel = st.text_input("📞 Telefon raqami (ixtiyoriy):", placeholder="+998 90 123 45 67")
             jinsi = st.radio("🚻 Jinsi", ["Erkak", "Ayol"], horizontal=True)
-            toifa = st.selectbox("🪪 Tarif toifasi", ["O'zbekiston fuqarosi", "Chet el fuqarosi", "Talaba (Student)"])
+            toifa = st.selectbox(f"🪪 Tarif toifasi (Talabaga {cheg_talaba_foiz}% chegirma)", ["O'zbekiston fuqarosi", "Chet el fuqarosi", "Talaba (Student)"])
             
             ks1, ks2 = st.columns([1.3, 1])
             with ks1:
@@ -452,7 +541,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                 st.info("🛌 O'rtadagi Lyuks xona: Bitta Dvuxspalniy (To'liq xona)")
 
             toliq_band_vikup = st.checkbox("🔒 Xonani to'liq band qilish (Vikup — to'liq xona narxida)")
-            kunlar = st.number_input("🌙 Yashash muddati (kecha) (7+ kunga 10% chegirma)", min_value=1, max_value=365, value=1)
+            kunlar = st.number_input(f"🌙 Yashash muddati (kecha) (7+ kunga {cheg_hafta_foiz}% chegirma)", min_value=1, max_value=365, value=1)
 
         with col3:
             maxsus_kunlik = st.number_input("⚙️ Maxsus kunlik tarif (0 = Avtomatik standart hisob)", min_value=0, value=0, step=5000)
@@ -504,7 +593,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                 elif zid_jins:
                     st.error(f"🚻 Xatolik: {xona} da tanlangan sanalarda **{zid_jins}** mehmon(lar) joylashgan! Umumiy xonaga **{jinsi}** mehmonni qo'shib bo'lmaydi.")
                 else:
-                    kunlik_stavka, standart_jami = narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=toliq_band_vikup)
+                    kunlik_stavka, standart_jami = dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=toliq_band_vikup)
                     if maxsus_kunlik > 0:
                         kunlik_stavka = maxsus_kunlik
                         yakuniy_narx = maxsus_kunlik * kunlar
@@ -556,7 +645,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                         f"👤 <b>Mijoz:</b> {mijoz_ism} ({odam_soni} kishi | {jinsi})\n"
                         f"{tel_qator}"
                         f"🛏 <b>Xona va Joy:</b> {xona} — <b>{krovat_yorliq}</b> ({kunlar} kecha)\n"
-                        f"🕒 <b>Kirish:</b> {kirish_vaqti_toliq} ➡️ <b>Chiqish:</b> {chiqish_str} 12:00\n"
+                        f"🕒 <b>Kirish:</b> {kirish_vaqti_toliq} ➡️ <b>Chiqish:</b> {chiqish_str} {hisob_soat_str}\n"
                         f"💰 <b>Jami hisob:</b> {yakuniy_narx:,.0f} UZS\n"
                         f"✅ <b>To'ladi:</b> {tolangan:,.0f} UZS ({t_taf})\n"
                         f"⚠️ <b>Qoldiq qarz:</b> {max(0, qoldiq):,.0f} UZS",
@@ -821,7 +910,6 @@ if sahifa == "🏠 Boshqaruv paneli":
 
 # ====================================================
 # SAHIFA 2: 📅 TIMELINE & SHAXMATKA
-# (1- VA 2-MASALA YECHIMI: TEKIS TUGMA + AVTOMATIK YOPILUVCHI EXCLUSIVE SANA OYNASI!)
 # ====================================================
 elif sahifa == "📅 Timeline & Shaxmatka":
     tl_col1, tl_col2 = st.columns([3.4, 1.1], gap="medium")
@@ -860,7 +948,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
             "<span>🟠 <b>Oldindan bron (Kutilmoqda)</b></span>"
             "<span>🔴 <b>Qarzdorlik mavjud</b></span>"
             "<span>⚪ <b>Chiqib ketgan (Arxiv)</b></span>"
-            "<span>💡 <i>Jadval tepasidagi <b>Sana (JU 16, SH 17...)</b> ustiga bossangiz — shu kundagi mehmonlar oynasi ochiladi (boshqa sanani bossangiz avvalgisi avtomatik yopiladi)!</i></span>"
+            "<span>💡 <i>Jadval tepasidagi <b>Sana (JU 16, SH 17...)</b> ustiga bossangiz — shu kundagi mehmonlar oynasi ochiladi!</i></span>"
             "</div>",
             unsafe_allow_html=True
         )
@@ -883,8 +971,6 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         sec_hdr_col = "#c4b5fd" if is_dark else "#4c1d95"
         room_bg = "rgba(124,58,237,0.06)" if is_dark else "#f8fafc"
 
-        # 2-SKRINSHOT TUZATISHI: EXCLUSIVE ACCORDION (name='ysh_exclusive_date')
-        # Bitta sana bosilganda oldingi ochiq sana avtomatik yopiladi, ustma-ust bo'lib ketmaydi!
         html_parts = [
             f"<style>"
             f".ysh-tl-wrap {{ overflow-x: auto; border: 1px solid {border_tbl}; border-radius: 14px; background: {bg_tbl}; padding: 8px; }}"
@@ -940,7 +1026,6 @@ elif sahifa == "📅 Timeline & Shaxmatka":
 
                 pos_style = "right: 0; left: auto; transform: none;" if idx_d >= len(sana_royxati) - 3 else ("left: 0; transform: none;" if idx_d <= 1 else "")
 
-                # name='ysh_exclusive_date' atributi bitta sana ochilganda boshqa barcha ochiq sanalarni AVTOMATIK YOPADI!
                 thead_html += (
                     f"<th style='{th_style}' title='Shu kundagi mehmonlarni ko`rish uchun bosing'>"
                     f"<details class='ysh-date-pop' name='ysh_exclusive_date'>"
@@ -1879,11 +1964,13 @@ elif sahifa == "👑 CEO va Hisobotlar":
     render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana, g_tugash_sana, g_davr_nomi)
 
 # ====================================================
-# SAHIFA 10: ⚙️ SOZLAMALAR
+# SAHIFA 10: ⚙️ SOZLAMALAR (DINAMIK TARIFLAR VA REGLAMENT BOSHQARUVI — FAQAT CEO UCHUN!)
 # ====================================================
 elif sahifa == "⚙️ Sozlamalar":
-    st.header("⚙️ Tizim va Profil Sozlamalari Markazi")
-    st.caption("Shaxsiy profil xavfsizligi, ma'lumotlar bazasi zaxirasi, tarif stavkalari va tizim diagnostikasi")
+    st.header("⚙️ Tizim, Tariflar va Profil Sozlamalari Markazi")
+    st.caption("Shaxsiy profil xavfsizligi, ma'lumotlar bazasi zaxirasi, dinamik tarif stavkalari va ichki reglament boshqaruvi")
+
+    joriy_soz = sozlamalarni_ol()
 
     col_s1, col_s2 = st.columns([1.15, 1.35], gap="large")
     with col_s1:
@@ -1949,33 +2036,93 @@ elif sahifa == "⚙️ Sozlamalar":
             )
 
     st.write("")
+    # BARCHA ADMINLAR VA CEO UCHUN KO'RINADIGAN AMALDAGI REGLAMENT VA TARIFLAR PANELI
     with st.container(border=True):
         st.subheader("📋 Hostel Xonalar Fondi, Standart Tariflar va Ichki Reglament")
+        st.caption("Quyidagi tariflar va qoidalar CEO tomonidan tasdiqlangan bo'lib, barcha adminlar uchun Qabul bo'limida avtomatik amal qiladi.")
+
+        k_m1, k_m2, k_m3, k_m4, k_m5 = st.columns(5)
+        k_m1.metric("🛏️ 4 kishilik xona (1 joy)", f"{int(float(joriy_soz.get('narx_4k', 100000))):,} UZS")
+        k_m2.metric("🛏️ 3 kishilik xona (1 joy)", f"{int(float(joriy_soz.get('narx_3k', 110000))):,} UZS")
+        k_m3.metric("🛏️ 2 kishilik xona (1 joy)", f"{int(float(joriy_soz.get('narx_2k', 150000))):,} UZS")
+        k_m4.metric("🛌 Lyuks (Mahalliy / Chet el)", f"{int(float(joriy_soz.get('narx_luxe_uz', 250000)))//1000}k / {int(float(joriy_soz.get('narx_luxe_chet', 300000)))//1000}k")
+        k_m5.metric("🎓 Talaba / 7+ kun chegirma", f"-{joriy_soz.get('chegirma_talaba', '50')}% / -{joriy_soz.get('chegirma_hafta', '10')}%")
+
+        st.write("")
         r_c1, r_c2, r_c3 = st.columns(3, gap="medium")
         with r_c1:
-            st.info(
-                "**🛏️ Chap qanot (1-xonadan 14-xonagacha — 14 ta xona):**\n"
-                "- **4 kishilik xonalar (1, 2, 3, 4, 5, 6, 8, 9, 12, 13):** `100,000 UZS` / kishi\n"
-                "- **3 kishilik xona (10-xona):** `110,000 UZS` / kishi\n"
-                "- **2 kishilik (2 alohida krovat — 7, 11, 14):** `150,000 UZS` / kishi"
-            )
+            st.info(joriy_soz.get("reg_chap", ""))
         with r_c2:
-            st.info(
-                "**🛌 O'rta sektor (15-xonadan 21-xonagacha — 7 ta Lyuks xona):**\n"
-                "- **Bitta Dvuxspalniy (15–21-xonalar):**\n"
-                "  - O'zbekiston fuqarolari uchun: `250,000 UZS` (xona narxi)\n"
-                "  - Chet el fuqarolari uchun: `300,000 UZS` (xona narxi)"
-            )
+            st.info(joriy_soz.get("reg_orta", ""))
         with r_c3:
-            st.info(
-                "**🛏️ O'ng qanot (22-xonadan 36-xonagacha — 15 ta xona):**\n"
-                "- **2 kishilik (2 alohida krovat — 22, 28, 32):** `150,000 UZS` / kishi\n"
-                "- **4 kishilik xonalar (23, 24, 25, 26, 27, 29, 30, 31, 33, 34, 35, 36):** `100,000 UZS` / kishi\n"
-                "- **Maxsus qoidalar:** Talabalarga `50% chegirma`, 7+ kunga `10% chegirma`, Hisob-kitob soati: har kuni `12:00`."
-            )
+            st.info(joriy_soz.get("reg_ong", ""))
+
+        # FAQAT CEO UCHUN: TARIFLAR, CHEGIRMALAR VA REGLAMENTNI TAHRIRLASH BLOKI!
+        if st.session_state.role == "ceo":
+            st.write("")
+            with st.expander("👑 ✏️ Tariflar, Chegirmalar va Ichki Reglamentni tahrirlash (Faqat CEO huquqi bilan)", expanded=False):
+                st.warning("💡 Diqqat: Bu yerda kiritilgan har qanday narx, chegirma va reglament o'zgarishi saqlanishi bilan barcha Adminlar ekranida yangilanadi va Qabul bo'limidagi hisob-kitoblar yangi tariflar bo'yicha amalga oshiriladi!")
+                with st.form("ceo_reglament_edit_form", enter_to_submit=False):
+                    st.markdown("##### 💰 1. Xonalar va Toifalar bo'yicha Bazaviy Kunlik Narxlar (UZS)")
+                    p_c1, p_c2, p_c3, p_c4 = st.columns(4, gap="medium")
+                    with p_c1:
+                        y_n4 = st.number_input("4 kishilik xona (1 kishi):", min_value=10000, step=5000, value=int(float(joriy_soz.get("narx_4k", 100000))))
+                        y_n3 = st.number_input("3 kishilik xona (1 kishi):", min_value=10000, step=5000, value=int(float(joriy_soz.get("narx_3k", 110000))))
+                    with p_c2:
+                        y_n2 = st.number_input("2 kishilik alohida krovat (1 kishi):", min_value=10000, step=5000, value=int(float(joriy_soz.get("narx_2k", 150000))))
+                        y_ustama = st.number_input("Chet el fuqarosi ustamasi (oddiy xona):", min_value=0, step=5000, value=int(float(joriy_soz.get("ustama_chet", 50000))))
+                    with p_c3:
+                        y_luxe_uz = st.number_input("O'rta Lyuks (O'zbekiston fuqarosi):", min_value=50000, step=10000, value=int(float(joriy_soz.get("narx_luxe_uz", 250000))))
+                        y_luxe_ch = st.number_input("O'rta Lyuks (Chet el fuqarosi):", min_value=50000, step=10000, value=int(float(joriy_soz.get("narx_luxe_chet", 300000))))
+                    with p_c4:
+                        y_ch_tal = st.number_input("Talaba chegirmasi (%):", min_value=0, max_value=90, step=5, value=int(float(joriy_soz.get("chegirma_talaba", 50))))
+                        y_ch_haf = st.number_input("7+ kunlik chegirma (%):", min_value=0, max_value=90, step=5, value=int(float(joriy_soz.get("chegirma_hafta", 10))))
+
+                    st.markdown("---")
+                    st.markdown("##### 📝 2. Barcha Adminlarga ko'rinadigan Reglament va Eslatma matnlari")
+                    t_c1, t_c2, t_c3 = st.columns(3, gap="medium")
+                    with t_c1:
+                        y_reg_chap = st.text_area("Chap qanot reglamenti:", value=joriy_soz.get("reg_chap", ""), height=170)
+                    with t_c2:
+                        y_reg_orta = st.text_area("O'rta sektor reglamenti:", value=joriy_soz.get("reg_orta", ""), height=170)
+                    with t_c3:
+                        y_reg_ong = st.text_area("O'ng qanot va Maxsus qoidalar:", value=joriy_soz.get("reg_ong", ""), height=170)
+
+                    if st.form_submit_button("✅ Barcha Tarif va Reglament o'zgarishlarini tasdiqlash va saqlash", type="primary", use_container_width=True):
+                        sozlamani_saqla("narx_4k", y_n4)
+                        sozlamani_saqla("narx_3k", y_n3)
+                        sozlamani_saqla("narx_2k", y_n2)
+                        sozlamani_saqla("ustama_chet", y_ustama)
+                        sozlamani_saqla("narx_luxe_uz", y_luxe_uz)
+                        sozlamani_saqla("narx_luxe_chet", y_luxe_ch)
+                        sozlamani_saqla("chegirma_talaba", y_ch_tal)
+                        sozlamani_saqla("chegirma_hafta", y_ch_haf)
+                        sozlamani_saqla("reg_chap", y_reg_chap.strip())
+                        sozlamani_saqla("reg_orta", y_reg_orta.strip())
+                        sozlamani_saqla("reg_ong", y_reg_ong.strip())
+
+                        jurnalga_yozish(
+                            "Reglament va Tariflar",
+                            xodim_ismi,
+                            "Tariflar yangilandi (CEO)",
+                            f"4k={y_n4:,}, 3k={y_n3:,}, 2k={y_n2:,}, Lyuks={y_luxe_uz:,}/{y_luxe_ch:,}, Talaba=-{y_ch_tal}%, 7+kun=-{y_ch_haf}%"
+                        )
+                        tg_xabar_yubor(
+                            "Hostel Tariflari va Reglamenti yangilandi",
+                            f"👑 <b>CEO tomonidan yangi tariflar o'rnatildi:</b>\n"
+                            f"• 4 kishilik: <b>{y_n4:,} UZS</b>\n"
+                            f"• 3 kishilik: <b>{y_n3:,} UZS</b>\n"
+                            f"• 2 kishilik: <b>{y_n2:,} UZS</b>\n"
+                            f"• Lyuks (O'rta): <b>{y_luxe_uz:,} / {y_luxe_ch:,} UZS</b>\n"
+                            f"• Chegirmalar: Talaba <b>-{y_ch_tal}%</b> | 7+ kun <b>-{y_ch_haf}%</b>",
+                            xodim_ismi, muhim=True
+                        )
+                        st.success("✅ Tariflar va Reglament muvaffaqiyatli yangilandi! Endi barcha adminlar yangi sozlamalar asosida ishlaydi.")
+                        st.rerun()
 
         df_oxirgi_kirish = db.read_df("SELECT vaqt, xodim, harakat, tafsilot FROM audit_log ORDER BY id DESC LIMIT 8")
         if not df_oxirgi_kirish.empty:
+            st.markdown("---")
             st.markdown("##### 🕒 Tizimdagi oxirgi faolliklar (Tezkor jurnal)")
             df_oxirgi_kirish.columns = ["Sana va Vaqt", "Foydalanuvchi", "Amaliyot", "Tafsilot"]
             st.dataframe(df_oxirgi_kirish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_oxirgi_kirish))
