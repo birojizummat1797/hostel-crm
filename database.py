@@ -661,3 +661,83 @@ def rangla_jadval(row):
             return ['background-color: #fef08a; color: #854d0e; font-weight: 600'] * len(row)
         else:
             return ['background-color: #f0fdf4; color: #15803d'] * len(row)
+
+def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
+    sigim = xona_sigimini_ol(xona_nomi)
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT odam_soni, xona_turi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan'",
+            (xona_nomi, exclude_mijoz_id)
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT odam_soni, xona_turi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'",
+            (xona_nomi,)
+        )
+
+    band = 0
+    for r_odam, r_tur, r_kir, r_chiq in rows:
+        r_kir = str(r_kir or '')
+        r_chiq = str(r_chiq or '')
+        ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
+        ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
+
+        if r_kir < ef_yangi_chiq and ef_chiq > kirish_str:
+            if "To'liq band" in str(r_tur or ''):
+                band += sigim
+            else:
+                band += int(r_odam or 1)
+    return min(sigim, band)
+
+def xona_jinsini_tekshir(xona_nomi, kirish_str, chiqish_str, yangi_jins, exclude_mijoz_id=None):
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+
+    if exclude_mijoz_id:
+        rows = db.fetchall(
+            "SELECT jinsi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan'",
+            (xona_nomi, exclude_mijoz_id)
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT jinsi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'",
+            (xona_nomi,)
+        )
+    for mavjud_jins, r_kir, r_chiq in rows:
+        r_kir = str(r_kir or '')
+        r_chiq = str(r_chiq or '')
+        ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
+        ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
+        if r_kir < ef_yangi_chiq and ef_chiq > kirish_str:
+            if mavjud_jins and mavjud_jins != yangi_jins:
+                return mavjud_jins
+    return None
+
+def id_yaratish(jinsi, kirish_sanasi_obj, toifa):
+    g_kod = "1" if jinsi == "Erkak" else "2"
+    sana_kod = kirish_sanasi_obj.strftime("%y%m%d")
+    t_kod = "1" if toifa == "O'zbekiston fuqarosi" else "2" if toifa == "Chet el fuqarosi" else "3"
+    kirish_str = kirish_sanasi_obj.strftime("%Y-%m-%d")
+    res = db.fetchone("SELECT COUNT(*) FROM bronlar WHERE kirish_sanasi = ?", (kirish_str,))
+    tartib = (res[0] if res else 0) + 1
+    return f"{g_kod}{sana_kod}{t_kod}{tartib:03d}"
+
+def haftalik_hisobot_yuklash(bosh_sana_str, tugash_sana_str):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if bosh_sana_str and tugash_sana_str:
+            db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Market_Savdolar')
+            db.read_df("SELECT * FROM xarajatlar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Mayda_Xarajatlar')
+            db.read_df("SELECT * FROM mahsulotlar ORDER BY qoldiq ASC").to_excel(writer, index=False, sheet_name='Sklad_Qoldiq')
+            db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (bosh_sana_str, tugash_sana_str)).to_excel(writer, index=False, sheet_name='Kassa_Kirimlar')
+            db.read_df("SELECT * FROM audit_log WHERE vaqt >= ? AND vaqt <= ? ORDER BY id DESC", (bosh_sana_str + " 00:00:00", tugash_sana_str + " 23:59:59")).to_excel(writer, index=False, sheet_name='Sklad_va_Tizim_Auditi')
+        else:
+            db.read_df("SELECT * FROM savdolar ORDER BY id DESC").to_excel(writer, index=False, sheet_name='Market_Savdolar')
+            db.read_df("SELECT * FROM xarajatlar ORDER BY id DESC").to_excel(writer, index=False, sheet_name='Mayda_Xarajatlar')
+            db.read_df("SELECT * FROM mahsulotlar ORDER BY qoldiq ASC").to_excel(writer, index=False, sheet_name='Sklad_Qoldiq')
+            db.read_df("SELECT * FROM tolovlar_tarixi ORDER BY id DESC").to_excel(writer, index=False, sheet_name='Kassa_Kirimlar')
+            db.read_df("SELECT * FROM audit_log ORDER BY id DESC").to_excel(writer, index=False, sheet_name='Sklad_va_Tizim_Auditi')
+    return output.getvalue()

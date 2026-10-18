@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import time
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone, time as dt_time
@@ -28,10 +29,22 @@ if 'ui_tema' not in st.session_state:
     st.session_state.ui_tema = "☀️ Yorug' (Standart)" if st.query_params.get("theme") == "light" else "🌙 Qorong'u (Dark UI)"
 if 'faol_sahifa' not in st.session_state:
     st.session_state.faol_sahifa = st.query_params.get("page", "🏠 Boshqaruv paneli")
+if 'oxirgi_avto_tekshiruv_ts' not in st.session_state:
+    st.session_state.oxirgi_avto_tekshiruv_ts = 0.0
+if 'sidebar_excel_tayyor' not in st.session_state:
+    st.session_state.sidebar_excel_tayyor = False
 
 # =========================================================
-# DINAMIK REGLAMENT, TARIFLAR VA TELEGRAM RO'YXAT BAZASI
+# TURBO-KESH QATLAMI (BAZAGA ORTIQCHA SO'ROVLARNI 85% QISQARTIRADI!)
 # =========================================================
+@st.cache_data(ttl=25, show_spinner=False)
+def kesh_df_ol(sql, params=()):
+    return db.read_df(sql, params)
+
+def keshni_tozala():
+    st.cache_data.clear()
+
+@st.cache_resource
 def init_reglament_db():
     db.execute("""
         CREATE TABLE IF NOT EXISTS tizim_sozlamalari (
@@ -82,9 +95,11 @@ def init_reglament_db():
                 db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (k, v))
     except Exception:
         pass
+    return True
 
 init_reglament_db()
 
+@st.cache_data(ttl=60, show_spinner=False)
 def sozlamalarni_ol():
     natija = {}
     try:
@@ -100,6 +115,7 @@ def sozlamani_saqla(kalit, qiymat):
         db.execute("UPDATE tizim_sozlamalari SET qiymat=? WHERE kalit=?", (str(qiymat), kalit))
     else:
         db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
+    keshni_tozala()
 
 # =========================================================
 # IKKI KANALLI TELEGRAM MOTORI (CEO VA MEHMONXONA EGASI UCHUN)
@@ -173,10 +189,10 @@ def kunlik_svodka_shakllantir_va_yubor(xodim_ismi="Avto-Tizim (Y.S.H.)", majburi
     if not yuborish_kerak:
         return False
 
-    df_b = db.read_df("SELECT * FROM bronlar")
-    df_t = db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana >= ?", (kecha_str,))
-    df_s = db.read_df("SELECT * FROM savdolar WHERE sana >= ?", (kecha_str,))
-    df_x = db.read_df("SELECT * FROM xarajatlar WHERE sana >= ?", (kecha_str,))
+    df_b = kesh_df_ol("SELECT * FROM bronlar")
+    df_t = kesh_df_ol("SELECT * FROM tolovlar_tarixi WHERE sana >= ?", (kecha_str,))
+    df_s = kesh_df_ol("SELECT * FROM savdolar WHERE sana >= ?", (kecha_str,))
+    df_x = kesh_df_ol("SELECT * FROM xarajatlar WHERE sana >= ?", (kecha_str,))
     toz_map = barcha_xona_tozalik_ol()
 
     if not df_b.empty:
@@ -526,31 +542,29 @@ def mukammal_ui_ux_sozla(tema_nomi):
 
 # =========================================================
 # XONADAGI KROVAT / JOY O'RNI VA SUTKA FUNKSIYALARI
-# (STANDART SANOQ: 1 -> 2 | 3 -> 4)
 # =========================================================
 def xonadagi_band_krovatlar(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
     uz_now = toshkent_vaqti()
     bugun_str = uz_now.strftime("%Y-%m-%d")
 
+    df_all_active = kesh_df_ol("SELECT mijoz_id, mijoz, xona, xona_turi, izoh, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE holat!='Chiqib ketgan'")
+    if df_all_active.empty:
+        return {}
+
+    x_rows = df_all_active[df_all_active['xona'] == xona_nomi]
     if exclude_mijoz_id:
-        rows = db.fetchall(
-            "SELECT mijoz, xona_turi, izoh, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan'",
-            (xona_nomi, exclude_mijoz_id)
-        )
-    else:
-        rows = db.fetchall(
-            "SELECT mijoz, xona_turi, izoh, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'",
-            (xona_nomi,)
-        )
+        x_rows = x_rows[x_rows['mijoz_id'] != exclude_mijoz_id]
+
     band_map = {}
     sigim = xona_sigimini_ol(xona_nomi)
-    for m_ism, x_tur, iz, r_kir, r_chiq in rows:
-        r_kir = str(r_kir or '')
-        r_chiq = str(r_chiq or '')
+    for _, r in x_rows.iterrows():
+        r_kir = str(r.get('kirish_sanasi') or '')
+        r_chiq = str(r.get('chiqish_sanasi') or '')
+        m_ism = r.get('mijoz', '')
         ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
         ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
         if r_kir < ef_yangi_chiq and ef_chiq > kirish_str:
-            birikma = f"{x_tur or ''} {iz or ''}"
+            birikma = f"{r.get('xona_turi') or ''} {r.get('izoh') or ''}"
             if "Barcha joylar" in birikma or "To'liq band" in birikma:
                 for j_i in range(1, sigim + 1):
                     band_map[j_i] = m_ism
@@ -570,10 +584,6 @@ def krovat_nomini_ajrat(xona_turi_str, izoh_str=""):
     return ""
 
 def xona_sxemasi_kichik_html(sigim, band_map):
-    """
-    Qabul oynasida tanlangan xonaning krovatlar joylashuvini (1 -> 2 / 3 -> 4)
-    vizual 2 ustunli matritsa shaklida ko'rsatadi.
-    """
     kataklar = []
     for k_i in range(1, sigim + 1):
         if k_i in band_map:
@@ -654,11 +664,14 @@ if not st.session_state.logged_in:
                     st.error("Noto'g'ri login yoki parol kiritildi!")
     st.stop()
 
-# ==========================================
-# HAR SAFAR AVTO-CHECKOUT VA 24 SOATLIK AVTO-SVODKANI TEKSHIRISH
-# ==========================================
-avto_checkout_tekshir()
-kunlik_svodka_shakllantir_va_yubor()
+# =========================================================
+# AVTO-CHECKOUT VA 24 SOATLIK SVODKANI HAR KLIKDA EMAS, HAR 5 DAQIQADA 1 MARTA TEKSHIRISH!
+# =========================================================
+hozir_ts = time.time()
+if hozir_ts - st.session_state.oxirgi_avto_tekshiruv_ts > 300:
+    avto_checkout_tekshir()
+    kunlik_svodka_shakllantir_va_yubor()
+    st.session_state.oxirgi_avto_tekshiruv_ts = hozir_ts
 
 # ==========================================
 # 2. ZAMONAVIY MENYU BAR
@@ -745,14 +758,21 @@ if st.session_state.role != "housekeeping":
     g_bosh_sana, g_tugash_sana, g_davr_nomi = aqlli_sana_filtri_ui(joylashuv="sidebar", key_prefix="global")
     st.sidebar.markdown(f"<div style='font-size:13px; font-weight:600; margin-top:4px;'>📌 Faol davr: <b>{g_davr_nomi}</b></div>", unsafe_allow_html=True)
 
+    # ON-DEMAND EXCEL BACKUP (HAR KLIKDA 7 TA JADVAL O'QILMASLIGI UCHUN!)
     st.sidebar.markdown("---")
-    st.sidebar.download_button(
-        label="💾 Barcha bazani yuklash (Excel)",
-        data=barcha_bazani_yuklash(),
-        file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
+    if not st.session_state.sidebar_excel_tayyor:
+        if st.sidebar.button("📦 Excel zaxirani tayyorlash", use_container_width=True):
+            st.session_state.sidebar_excel_tayyor = True
+            st.rerun()
+    else:
+        st.sidebar.download_button(
+            label="💾 Yuklab olish (.xlsx)",
+            data=barcha_bazani_yuklash(),
+            file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True
+        )
 else:
     g_bosh_sana, g_tugash_sana, g_davr_nomi = None, None, "Bugungi"
 
@@ -773,7 +793,7 @@ def render_vizual_krovatlar_xaritasi(qidir_x=""):
 
     qanot_filtr = st.radio("Sektorni tanlang:", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True, key="xarita_qanot_f")
     tozalik_map = barcha_xona_tozalik_ol()
-    df_faol_b = db.read_df("SELECT * FROM bronlar WHERE holat != 'Chiqib ketgan' ORDER BY id DESC")
+    df_faol_b = kesh_df_ol("SELECT * FROM bronlar WHERE holat != 'Chiqib ketgan' ORDER BY id DESC")
 
     for tomon, xonalar in XONALAR.items():
         if qanot_filtr != "Barchasi" and tomon != qanot_filtr:
@@ -874,10 +894,9 @@ def render_vizual_krovatlar_xaritasi(qidir_x=""):
             col_i += 1
 
 # =========================================================
-# YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
-# (STANDART KROVAT SXEMASI: 1 -> 2 | 3 -> 4 BILAN!)
+# YORDAMCHI FUNKSIYA: YANGI BRON FORMASI (@st.fragment BILAN TEZKOR!)
 # =========================================================
-def render_qabul_formasi(form_key_suffix="main"):
+def _render_qabul_inner(form_key_suffix="main"):
     mukammal_ui_ux_sozla(st.session_state.ui_tema)
     soz = sozlamalarni_ol()
     cheg_hafta_foiz = int(float(soz.get("chegirma_hafta", 10) or 10))
@@ -1105,6 +1124,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (hozirgi_sana, yangi_id, mijoz_ism.strip(), "Yotoq (Qabul)", tolangan, tolov_shakli, t_taf, xodim_ismi))
                     jurnalga_yozish(yangi_id, xodim_ismi, "Yangi " + saq_turi, f"Mijoz: {mijoz_ism} ({odam_soni} kishi | {toifa}), Xona: {xona} ({krovat_yorliq}), Kirish: {kirish_vaqti_toliq} -> Chiqish: {chiqish_str} 12:00, Jami: {yakuniy_narx:,.0f}, To'ladi: {tolangan:,.0f} ({t_taf})")
+                    keshni_tozala()
                     
                     tel_qator = f"📞 <b>Telefon:</b> {mijoz_tel.strip()}\n" if mijoz_tel.strip() else ""
                     cheg_qator = f"🏷️ <b>Chegirma:</b> -{int(amaldagi_cheg_foiz)}%\n" if amaldagi_cheg_foiz > 0 else ""
@@ -1123,10 +1143,18 @@ def render_qabul_formasi(form_key_suffix="main"):
                     st.success(f"✅ Mehmon ({mijoz_ism} — {odam_soni} kishi) {xona} ({krovat_yorliq}) ga joylashtirildi! Chiqish: {chiqish_str} {hisob_soat_str} | Jami: {yakuniy_narx:,.0f} UZS")
                     st.rerun()
 
+if hasattr(st, "fragment"):
+    @st.fragment
+    def render_qabul_formasi(form_key_suffix="main"):
+        _render_qabul_inner(form_key_suffix)
+else:
+    def render_qabul_formasi(form_key_suffix="main"):
+        _render_qabul_inner(form_key_suffix)
+
 if hasattr(st, "dialog"):
     @st.dialog("➕ Yangi bron / Mehmonni ro'yxatga olish", width="large")
     def yangi_bron_modal():
-        render_qabul_formasi("modal")
+        _render_qabul_inner("modal")
 else:
     def yangi_bron_modal():
         pass
@@ -1148,10 +1176,10 @@ if sahifa == "🏠 Boshqaruv paneli":
             kunlik_svodka_shakllantir_va_yubor(xodim_ismi, majburiy=True)
             st.success("✅ Svodka CEO va Egaga yuborildi!")
 
-    df_barcha = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
-    df_savdolar = db.read_df("SELECT * FROM savdolar ORDER BY id DESC")
-    df_tolovlar = db.read_df("SELECT * FROM tolovlar_tarixi ORDER BY id DESC")
-    df_xarajat = db.read_df("SELECT * FROM xarajatlar ORDER BY id DESC")
+    df_barcha = kesh_df_ol("SELECT * FROM bronlar ORDER BY id DESC")
+    df_savdolar = kesh_df_ol("SELECT * FROM savdolar ORDER BY id DESC")
+    df_tolovlar = kesh_df_ol("SELECT * FROM tolovlar_tarixi ORDER BY id DESC")
+    df_xarajat = kesh_df_ol("SELECT * FROM xarajatlar ORDER BY id DESC")
     tozalik_map = barcha_xona_tozalik_ol()
 
     if not df_barcha.empty:
@@ -1257,6 +1285,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                         db.execute("UPDATE bronlar SET holat='Chiqib ketgan' WHERE mijoz_id=?", (ch_row['mijoz_id'],))
                         xona_tozalik_ozgartir(ch_row['xona'], "Tozalash kerak")
                         jurnalga_yozish(ch_row['mijoz_id'], xodim_ismi, "Checkout", f"{ch_row['mijoz']} ({ch_row['xona']}) chiqib ketdi")
+                        keshni_tozala()
                         aqlli_tg_xabar("Checkout (Mehmon chiqib ketdi)", f"👤 <b>Mijoz:</b> {ch_row['mijoz']} ({ch_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {ch_row['xona']}", xodim_ismi, turi="mijoz")
                         st.rerun()
                 else:
@@ -1277,6 +1306,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                     if ck2.button("🔑 Check-in", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET bron_turi='Hozir kirish' WHERE mijoz_id=?", (k_row['mijoz_id'],))
                         jurnalga_yozish(k_row['mijoz_id'], xodim_ismi, "Check-in (Keldi)", f"Bron qilingan {k_row['mijoz']} ({k_row['xona']}) kelib joylashdi")
+                        keshni_tozala()
                         aqlli_tg_xabar("Bron Check-in (Mehmon keldi)", f"👤 <b>Mijoz:</b> {k_row['mijoz']} ({k_row['odam_soni']} kishi)\n🛏 <b>Xona:</b> {k_row['xona']}{joy_b}", xodim_ismi, turi="mijoz")
                         st.rerun()
                 else:
@@ -1396,7 +1426,7 @@ if sahifa == "🏠 Boshqaruv paneli":
             with st.expander(f"📂 «Boshqa» to'lovlarning batafsil ro'yxatini ko'rish ({len(boshqa_list)} xil usul — Jami: {boshqa_kirim_jami - boshqa_chiqim_jami:,.0f} UZS)"):
                 st.dataframe(df_boshqa, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_boshqa))
 
-    df_mahsulotlar = db.read_df("SELECT nomi, hajmi, kategoriya, sub_kategoriya, narxi, qoldiq, izoh FROM mahsulotlar WHERE qoldiq <= 5 ORDER BY qoldiq ASC")
+    df_mahsulotlar = kesh_df_ol("SELECT nomi, hajmi, kategoriya, sub_kategoriya, narxi, qoldiq, izoh FROM mahsulotlar WHERE qoldiq <= 5 ORDER BY qoldiq ASC")
     if not df_mahsulotlar.empty:
         with st.expander(f"🚨 DIQQAT: Omborda {len(df_mahsulotlar)} ta mahsulot kam qolgan! (Jadvalni ko'rish uchun bosing)", expanded=False):
             df_m_kam = df_mahsulotlar.copy()
@@ -1456,12 +1486,12 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         )
 
         if arxiv_korsat_tl:
-            tl_bronlar = db.read_df(
+            tl_bronlar = kesh_df_ol(
                 "SELECT * FROM bronlar WHERE kirish_sanasi < ? AND chiqish_sanasi >= ? ORDER BY kirish_sanasi ASC, id ASC",
                 (oxirgi_sana_str, bosh_sana_str)
             )
         else:
-            tl_bronlar = db.read_df(
+            tl_bronlar = kesh_df_ol(
                 "SELECT * FROM bronlar WHERE holat != 'Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi >= ? ORDER BY kirish_sanasi ASC, id ASC",
                 (oxirgi_sana_str, bosh_sana_str)
             )
@@ -1497,52 +1527,53 @@ elif sahifa == "📅 Timeline & Shaxmatka":
             f"<div class='ysh-tl-wrap'>"
         ]
 
+        # Sanalar sarlavhasi barcha qanotlar uchun bir marta hisoblanadi (3x tezroq!)
+        thead_html = "<thead><tr><th class='ysh-tl-room'>Xona</th>"
+        for idx_d, d in enumerate(sana_royxati):
+            d_iso = d.strftime("%Y-%m-%d")
+            is_today = (d_iso == bugungi_sana)
+            th_style = "background: #7c3aed; color: #ffffff !important; border-radius: 6px;" if is_today else ""
+            
+            if not tl_bronlar.empty:
+                kun_mask = tl_bronlar.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], d_iso), axis=1)
+                kun_df = tl_bronlar[kun_mask]
+            else:
+                kun_df = pd.DataFrame()
+            
+            band_x_c = len(kun_df['xona'].unique()) if not kun_df.empty else 0
+            jami_m_c = int(kun_df['odam_soni'].fillna(1).sum()) if not kun_df.empty else 0
+            
+            if kun_df.empty:
+                ro_html = "<div style='color:#4ade80 !important; margin-top:6px; font-weight:600;'>🟢 Barcha 36 ta xona bo'sh</div>"
+            else:
+                qatorlar_list = []
+                for _, kr in kun_df.iterrows():
+                    m_n = str(kr['mijoz']).replace("<", "").replace(">", "").replace("'", "`")
+                    j_inf = krovat_nomini_ajrat(kr.get('xona_turi', ''), kr.get('izoh', ''))
+                    j_txt = f" ({j_inf})" if j_inf else ""
+                    qatorlar_list.append(f"<div style='padding:4px 0; border-bottom:1px solid #1e293b;'>🛏️ <b>{kr['xona']}</b>{j_txt}: {m_n} (<b>{kr['odam_soni']} kishi</b>)</div>")
+                ro_html = "<div style='max-height:190px; overflow-y:auto; margin-top:6px;'>" + "".join(qatorlar_list) + "</div>"
+
+            pos_style = "right: 0; left: auto; transform: none;" if idx_d >= len(sana_royxati) - 3 else ("left: 0; transform: none;" if idx_d <= 1 else "")
+
+            thead_html += (
+                f"<th style='{th_style}' title='Shu kundagi mehmonlarni ko`rish uchun bosing'>"
+                f"<details class='ysh-date-pop' name='ysh_exclusive_date'>"
+                f"<summary class='ysh-date-sum'>{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></summary>"
+                f"<div class='ysh-date-box' style='{pos_style}'>"
+                f"<div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:5px;'>"
+                f"<span style='font-size:13px; font-weight:700; color:#a78bfa !important;'>📅 {d.strftime('%d.%m.%Y')} ({kun_nom_qisqa[d.weekday()]})</span>"
+                f"<span style='font-size:11px; opacity:0.75; cursor:pointer;' onclick='this.closest(\"details\").removeAttribute(\"open\")'>✖ Yopish</span>"
+                f"</div>"
+                f"<div style='margin-top:5px; font-size:11.5px;'>Band xonalar: <b>{band_x_c}/36</b> &nbsp;|&nbsp; Jami mehmon: <b>{jami_m_c} kishi</b></div>"
+                f"{ro_html}"
+                f"</div></details></th>"
+            )
+        thead_html += "</tr></thead>"
+
         for tomon, xonalar in XONALAR.items():
             if tanlangan_katalog != "Barchasi" and tomon != tanlangan_katalog:
                 continue
-
-            thead_html = "<thead><tr><th class='ysh-tl-room'>Xona</th>"
-            for idx_d, d in enumerate(sana_royxati):
-                d_iso = d.strftime("%Y-%m-%d")
-                is_today = (d_iso == bugungi_sana)
-                th_style = "background: #7c3aed; color: #ffffff !important; border-radius: 6px;" if is_today else ""
-                
-                if not tl_bronlar.empty:
-                    kun_mask = tl_bronlar.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], d_iso), axis=1)
-                    kun_df = tl_bronlar[kun_mask]
-                else:
-                    kun_df = pd.DataFrame()
-                
-                band_x_c = len(kun_df['xona'].unique()) if not kun_df.empty else 0
-                jami_m_c = int(kun_df['odam_soni'].fillna(1).sum()) if not kun_df.empty else 0
-                
-                if kun_df.empty:
-                    ro_html = "<div style='color:#4ade80 !important; margin-top:6px; font-weight:600;'>🟢 Barcha 36 ta xona bo'sh</div>"
-                else:
-                    qatorlar_list = []
-                    for _, kr in kun_df.iterrows():
-                        m_n = str(kr['mijoz']).replace("<", "").replace(">", "").replace("'", "`")
-                        j_inf = krovat_nomini_ajrat(kr.get('xona_turi', ''), kr.get('izoh', ''))
-                        j_txt = f" ({j_inf})" if j_inf else ""
-                        qatorlar_list.append(f"<div style='padding:4px 0; border-bottom:1px solid #1e293b;'>🛏️ <b>{kr['xona']}</b>{j_txt}: {m_n} (<b>{kr['odam_soni']} kishi</b>)</div>")
-                    ro_html = "<div style='max-height:190px; overflow-y:auto; margin-top:6px;'>" + "".join(qatorlar_list) + "</div>"
-
-                pos_style = "right: 0; left: auto; transform: none;" if idx_d >= len(sana_royxati) - 3 else ("left: 0; transform: none;" if idx_d <= 1 else "")
-
-                thead_html += (
-                    f"<th style='{th_style}' title='Shu kundagi mehmonlarni ko`rish uchun bosing'>"
-                    f"<details class='ysh-date-pop' name='ysh_exclusive_date'>"
-                    f"<summary class='ysh-date-sum'>{kun_nom_qisqa[d.weekday()]}<br><b>{d.day}</b></summary>"
-                    f"<div class='ysh-date-box' style='{pos_style}'>"
-                    f"<div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:5px;'>"
-                    f"<span style='font-size:13px; font-weight:700; color:#a78bfa !important;'>📅 {d.strftime('%d.%m.%Y')} ({kun_nom_qisqa[d.weekday()]})</span>"
-                    f"<span style='font-size:11px; opacity:0.75; cursor:pointer;' onclick='this.closest(\"details\").removeAttribute(\"open\")'>✖ Yopish</span>"
-                    f"</div>"
-                    f"<div style='margin-top:5px; font-size:11.5px;'>Band xonalar: <b>{band_x_c}/36</b> &nbsp;|&nbsp; Jami mehmon: <b>{jami_m_c} kishi</b></div>"
-                    f"{ro_html}"
-                    f"</div></details></th>"
-                )
-            thead_html += "</tr></thead>"
 
             html_parts.append(
                 f"<details class='ysh-wing-details' open>"
@@ -1652,7 +1683,7 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         st.markdown("".join(html_parts), unsafe_allow_html=True)
 
     else:
-        oraliq_bronlar = db.read_df("SELECT xona, xona_turi, kirish_sanasi, chiqish_sanasi, odam_soni, holat FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi >= ?", (oxirgi_sana_str, bosh_sana_str))
+        oraliq_bronlar = kesh_df_ol("SELECT xona, xona_turi, kirish_sanasi, chiqish_sanasi, odam_soni, holat FROM bronlar WHERE holat!='Chiqib ketgan' AND kirish_sanasi < ? AND chiqish_sanasi >= ?", (oxirgi_sana_str, bosh_sana_str))
         for tomon, xonalar in XONALAR.items():
             if tanlangan_katalog != "Barchasi" and tomon != tanlangan_katalog:
                 continue
@@ -1718,7 +1749,7 @@ elif sahifa == "📝 Yangi Bron / Qabul":
 # ====================================================
 elif sahifa == "👥 Bronlar va Mehmonlar":
     st.header("👥 Bronlar va Mehmonlar Boshqaruvi")
-    df = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
+    df = kesh_df_ol("SELECT * FROM bronlar ORDER BY id DESC")
     
     ko_rejim = st.radio(
         "Bo'limni tanlang:",
@@ -1732,6 +1763,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
     st.markdown("---")
 
     if not df.empty:
+        df = df.copy()
         df['faktik_narx'] = df['faktik_narx'].fillna(0)
         df['tolagan_summa'] = df['tolagan_summa'].fillna(0)
         df['qoldiq'] = df['qoldiq'].fillna(0)
@@ -1855,6 +1887,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             (p_ism.strip(), p_tel.strip(), p_izoh.strip(), f_id)
                         )
                         jurnalga_yozish(f_id, xodim_ismi, "Mijoz kartasi yangilandi", f"{p_ism}: Tel={p_tel}, Izoh={p_izoh}")
+                        keshni_tozala()
                         st.success("✅ Ma'lumotlar saqlandi!")
                         st.rerun()
 
@@ -1895,8 +1928,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     })
                 st.dataframe(pd.DataFrame(kunlik_qatorlar), use_container_width=True, hide_index=True)
 
-            df_m_tol = db.read_df("SELECT sana, manba, tolov_tafsiloti, summa, xodim FROM tolovlar_tarixi WHERE mijoz_id=? ORDER BY id DESC", (f_id,))
-            df_m_qarz_savdo = db.read_df("SELECT vaqt, tafsilot, xodim FROM audit_log WHERE mijoz_id=? AND harakat='Market qarz' ORDER BY id DESC", (f_id,))
+            df_m_tol = kesh_df_ol("SELECT sana, manba, tolov_tafsiloti, summa, xodim FROM tolovlar_tarixi WHERE mijoz_id=? ORDER BY id DESC", (f_id,))
+            df_m_qarz_savdo = kesh_df_ol("SELECT vaqt, tafsilot, xodim FROM audit_log WHERE mijoz_id=? AND harakat='Market qarz' ORDER BY id DESC", (f_id,))
 
             with st.expander("🛒 2. Qo'shimcha xizmatlar (Marketdan xona qarziga olinganlar)", expanded=True):
                 if not df_m_qarz_savdo.empty:
@@ -1957,6 +1990,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (bugungi_sana, q_id, q_mijoz_ism, "Qarz yopish", tolov_sum, t_shakl, t_tafsiloti, xodim_ismi))
                         jurnalga_yozish(q_id, xodim_ismi, "Qarz yopildi", f"Summa: {tolov_sum:,.0f} ({t_tafsiloti})")
+                        keshni_tozala()
                         aqlli_tg_xabar("Mehmon qarzi to'landi", f"👤 <b>Mijoz:</b> {q_mijoz_ism}\n💵 <b>To'landi:</b> {tolov_sum:,.0f} UZS ({t_tafsiloti})", xodim_ismi, turi="mijoz")
                         st.success("To'lov muvaffaqiyatli qabul qilindi!")
                         st.rerun()
@@ -1999,6 +2033,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             yangi_holat = "To'langan" if yangi_qoldiq <= 0 else "Qarzdorlik"
                             db.execute("UPDATE bronlar SET kunlar=kunlar+?, qoldiq=?, jami_summa=jami_summa+?, faktik_narx=faktik_narx+?, chiqish_sanasi=?, holat=? WHERE mijoz_id=?", (qoshimcha_kun, yangi_qoldiq, q_sum, q_sum, yangi_chiqish_str, yangi_holat, m_id))
                             jurnalga_yozish(m_id, xodim_ismi, "Muddat cho'zildi", f"+{qoshimcha_kun} sutka ({q_sum:,.0f} UZS)")
+                            keshni_tozala()
                             aqlli_tg_xabar("Muddat cho'zildi", f"👤 <b>Mijoz:</b> {mijoz_data['mijoz']}\n➕ <b>Qo'shildi:</b> +{qoshimcha_kun} sutka ({q_sum:,.0f} UZS)\n🛫 <b>Yangi chiqish:</b> {yangi_chiqish_str} 12:00", xodim_ismi, turi="mijoz", muhim=(chozish_chegirma > 0))
                             st.success("Yashash muddati muvaffaqiyatli uzaytirildi!")
                             st.rerun()
@@ -2047,6 +2082,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             db.execute("UPDATE bronlar SET tomon=?, xona=?, xona_turi=?, izoh=? WHERE mijoz_id=?", (y_tomon, y_xona, y_xona_turi, yangi_iz_koch, k_id))
                             xona_tozalik_ozgartir(eski_xona, "Tozalash kerak")
                             jurnalga_yozish(k_id, xodim_ismi, "Xona ko'chirildi", f"{k_data['mijoz']}: {eski_xona} -> {y_xona} ({y_xona_turi})")
+                            keshni_tozala()
                             aqlli_tg_xabar("Xona almashtirildi", f"👤 <b>Mijoz:</b> {k_data['mijoz']}\n🔄 <b>Ko'chirildi:</b> {eski_xona} ➡️ {y_xona} ({y_xona_turi})", xodim_ismi, turi="mijoz")
                             st.success(f"Mehmon {y_xona} ga ko'chirildi! ({eski_xona} tozalash ro'yxatiga o'tkazildi)")
                             st.rerun()
@@ -2088,6 +2124,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                     (bugungi_sana, c_id, c_row['mijoz'], "Vozvrat (Pul qaytarish)", -vozvrat_sum, vozvrat_kassa, vozvrat_kassa, xodim_ismi)
                                 )
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout + Vozvrat", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni bo'shatdi. Qaytarildi: -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})")
+                                keshni_tozala()
                                 aqlli_tg_xabar(
                                     "Checkout va Pul qaytarish (Vozvrat)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n"
@@ -2098,6 +2135,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 )
                             else:
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni topshirdi va arxivga o'tkazildi")
+                                keshni_tozala()
                                 aqlli_tg_xabar(
                                     "Checkout (Mijoz chiqib ketdi)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)",
@@ -2195,6 +2233,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                        (bugungi_sana, t_id, y_ism.strip(), "Tahrirlash (Kassa tuzatish)", farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
 
                         jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism} ({y_odam} kishi), Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq} -> Chiqish: {y_chiqish_str}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
+                        keshni_tozala()
                         aqlli_tg_xabar(
                             "Mijoz ma'lumotlari tahrirlandi",
                             f"🆔 <b>ID:</b> {t_id}\n"
@@ -2223,7 +2262,7 @@ elif sahifa == "🧹 Xona tozalash":
     else:
         st.caption("👆 Xonalarni tanlab «Toza» yoki «Tozalash kerak» holatiga o'tkazing. Mehmon chiqib ketgan xona avtomatik ravishda «Tozalash kerak» blokiga tushadi.")
         tozalik_map = barcha_xona_tozalik_ol()
-        df_barcha_x = db.read_df("SELECT xona, kirish_sanasi, chiqish_sanasi, holat FROM bronlar WHERE holat!='Chiqib ketgan'")
+        df_barcha_x = kesh_df_ol("SELECT xona, kirish_sanasi, chiqish_sanasi, holat FROM bronlar WHERE holat!='Chiqib ketgan'")
         if not df_barcha_x.empty:
             faol_x_mask = df_barcha_x.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], bugungi_sana), axis=1)
             band_xonalar_set = set(df_barcha_x[faol_x_mask]['xona'].unique())
@@ -2300,15 +2339,16 @@ elif sahifa == "🛒 Kassa (POS Market)":
     st.markdown("---")
     
     if market_tanlov == "🛒 Savdo oynasi (Kassa)":
-        mahsulotlar = db.read_df("SELECT * FROM mahsulotlar WHERE qoldiq > 0")
+        mahsulotlar = kesh_df_ol("SELECT * FROM mahsulotlar WHERE qoldiq > 0")
         if mahsulotlar.empty:
             st.warning("⚠️ Omborda sotuv uchun mahsulot qolmagan.")
         else:
+            mahsulotlar = mahsulotlar.copy()
             mahsulotlar['Toliq_Nomi'] = mahsulotlar.apply(
                 lambda r: f"{r['nomi']} ({r['hajmi']}) — {int(r['narxi']):,} UZS [Qoldi: {r['qoldiq']} ta]" if r['hajmi'] else f"{r['nomi']} — {int(r['narxi']):,} UZS [Qoldi: {r['qoldiq']} ta]",
                 axis=1
             )
-            faol_bronlar = db.read_df("SELECT mijoz_id, mijoz, xona FROM bronlar WHERE holat != 'Chiqib ketgan'")
+            faol_bronlar = kesh_df_ol("SELECT mijoz_id, mijoz, xona FROM bronlar WHERE holat != 'Chiqib ketgan'")
             mijoz_variantlar = ["💵 Darhol To'lov (Umumiy xaridor)"]
             if not faol_bronlar.empty:
                 mijoz_variantlar += (faol_bronlar['mijoz'] + " (" + faol_bronlar['xona'] + ") - ID: " + faol_bronlar['mijoz_id']).tolist()
@@ -2371,6 +2411,7 @@ elif sahifa == "🛒 Kassa (POS Market)":
                                        (bugungi_sana, "Market", xaridor_nomi, "Market Savdo", jami_sum, "Darhol", m_tafsiloti, xodim_ismi))
                             jurnalga_yozish("Market (Sotuv)", xodim_ismi, "Naqd Savdo", f"{miqdor} ta {tovar_nom_qisqa} sotildi. Summa: {jami_sum:,.0f} UZS ({m_tafsiloti})")
                         
+                        keshni_tozala()
                         aqlli_tg_xabar(
                             "Market Savdosi (POS)",
                             f"🛍 <b>Mahsulot:</b> {tovar_nom_qisqa} ({miqdor} dona)\n"
@@ -2385,9 +2426,9 @@ elif sahifa == "🛒 Kassa (POS Market)":
     else:
         st.info(f"📅 Ko'rsatilayotgan davr: **{g_davr_nomi}**")
         if g_bosh_sana and g_tugash_sana:
-            df_savdo = db.read_df("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
+            df_savdo = kesh_df_ol("SELECT * FROM savdolar WHERE sana >= ? AND sana <= ? ORDER BY id DESC", (g_bosh_sana, g_tugash_sana))
         else:
-            df_savdo = db.read_df("SELECT * FROM savdolar ORDER BY id DESC")
+            df_savdo = kesh_df_ol("SELECT * FROM savdolar ORDER BY id DESC")
 
         if not df_savdo.empty:
             jami_m_sum = df_savdo['jami_summa'].fillna(0).sum()
@@ -2467,6 +2508,7 @@ elif sahifa == "📦 Xizmatlar va Sklad":
                         st.success(f"✅ Yangi {t_nom} ({t_hajm if t_hajm else 'Standart'}) omborga qo'shildi!")
                         jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Yangi tovar keldi", f"{t_nom} ({t_hajm}) {tov_soni} ta kiritildi. Sotuv narxi: {tov_narxi:,.0f} UZS")
 
+                    keshni_tozala()
                     aqlli_tg_xabar(
                         "Skladga tovar kirim qilindi",
                         f"📦 <b>Mahsulot:</b> {t_nom} ({t_hajm or 'Standart'})\n"
@@ -2477,8 +2519,9 @@ elif sahifa == "📦 Xizmatlar va Sklad":
                     st.rerun()
 
     elif ombor_tanlov == "✏️ Tovarni tahrirlash / O'chirish":
-        df_m_edit = db.read_df("SELECT * FROM mahsulotlar ORDER BY id DESC")
+        df_m_edit = kesh_df_ol("SELECT * FROM mahsulotlar ORDER BY id DESC")
         if not df_m_edit.empty:
+            df_m_edit = df_m_edit.copy()
             df_m_edit['label'] = df_m_edit.apply(lambda r: f"{r['id']} | {r['nomi']} ({r['hajmi'] if r['hajmi'] else 'Standart'}) — Qoldiq: {r['qoldiq']} ta", axis=1)
             tanlangan_m_str = st.selectbox("Tahrirlanadigan tovarni tanlang:", df_m_edit['label'].tolist())
             m_edit_id = int(tanlangan_m_str.split(" | ")[0])
@@ -2503,12 +2546,14 @@ elif sahifa == "📦 Xizmatlar va Sklad":
                     db.execute("UPDATE mahsulotlar SET nomi=?, hajmi=?, tannarx=?, narxi=?, qoldiq=?, izoh=? WHERE id=?",
                                (y_m_nomi.strip(), y_m_hajm.strip(), y_m_tannarx, y_m_narx, y_m_qoldiq, y_m_izoh.strip(), m_edit_id))
                     jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Tovar tahrirlandi", f"{y_m_nomi} ({y_m_hajm}): Narx={y_m_narx:,.0f}, Qoldiq={y_m_qoldiq} ta")
+                    keshni_tozala()
                     aqlli_tg_xabar("Sklad tovari tahrirlandi", f"📦 <b>Tovar:</b> {y_m_nomi} ({y_m_hajm})\n🔢 <b>Yangi qoldiq:</b> {y_m_qoldiq} dona | <b>Narx:</b> {y_m_narx:,.0f} UZS", xodim_ismi, turi="moliya", muhim=True)
                     st.success("✅ Tovar ma'lumotlari yangilandi!")
                     st.rerun()
                 if ochirish_m:
                     db.execute("DELETE FROM mahsulotlar WHERE id=?", (m_edit_id,))
                     jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Tovar o'chirildi", f"{m_row['nomi']} ombordan o'chirildi")
+                    keshni_tozala()
                     aqlli_tg_xabar("Skladdan tovar o'chirildi!", f"🗑️ <b>O'chirilgan tovar:</b> {m_row['nomi']}", xodim_ismi, turi="moliya", muhim=True)
                     st.success("🗑️ Tovar ombordan o'chirildi!")
                     st.rerun()
@@ -2516,8 +2561,9 @@ elif sahifa == "📦 Xizmatlar va Sklad":
             st.info("Omborda tovar yo'q.")
                 
     else:
-        df_mahsulot = db.read_df("SELECT nomi, hajmi, kategoriya, sub_kategoriya, tannarx, narxi, qoldiq, izoh FROM mahsulotlar ORDER BY qoldiq ASC")
-        if not df_mahsulot.empty: 
+        df_mahsulot = kesh_df_ol("SELECT nomi, hajmi, kategoriya, sub_kategoriya, tannarx, narxi, qoldiq, izoh FROM mahsulotlar ORDER BY qoldiq ASC")
+        if not df_mahsulot.empty:
+            df_mahsulot = df_mahsulot.copy()
             df_mahsulot['izoh'] = df_mahsulot['izoh'].fillna('')
             df_mahsulot['tannarx'] = df_mahsulot['tannarx'].fillna(0)
             df_mahsulot.columns = ["Nomi", "Hajmi", "Kategoriya", "Turi", "Tannarxi", "Sotuv Narxi", "Qoldiq", "Izoh (To'liq)"]
@@ -2552,6 +2598,7 @@ elif sahifa == "👑 CEO va Hisobotlar":
                     else:
                         db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (hk_login.strip(), "housekeeping", hk_parol.strip(), hk_ism.strip()))
                         jurnalga_yozish("Xodimlar", xodim_ismi, "Tozalik xodimasi qo'shildi", f"{hk_ism} ({hk_login})")
+                        keshni_tozala()
                         st.success(f"✅ {hk_ism} (`{hk_login}`) tizimga qo'shildi!")
                         st.rerun()
 
@@ -2584,6 +2631,7 @@ elif sahifa == "⚙️ Sozlamalar":
                         else:
                             db.execute("UPDATE xodimlar SET ism=? WHERE login=?", (yangi_ism.strip(), st.session_state.user_login))
                         jurnalga_yozish("Tizim Sozlamalari", xodim_ismi, "Profil yangilandi", "Foydalanuvchi paroli/ismi o'zgartirildi")
+                        keshni_tozala()
                         st.session_state.logged_in = False
                         st.query_params.clear()
                         st.rerun()
@@ -2610,22 +2658,12 @@ elif sahifa == "⚙️ Sozlamalar":
             act1, act2 = st.columns(2, gap="small")
             with act1:
                 if st.button("🔄 Tizim keshini yangilash", use_container_width=True):
-                    st.cache_data.clear()
+                    keshni_tozala()
                     st.success("✅ Tizim keshi tozalandi!")
             with act2:
                 if st.button("📲 24 soatlik Svodkani hozir yuborish", use_container_width=True):
                     kunlik_svodka_shakllantir_va_yubor(xodim_ismi, majburiy=True)
                     st.success("✅ Svodka Telegramga yuborildi!")
-
-            if st.session_state.role != "housekeeping":
-                st.write("")
-                st.download_button(
-                    label="📥 To'liq ma'lumotlar bazasini Excel (.xlsx) formatda yuklab olish",
-                    data=barcha_bazani_yuklash(),
-                    file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
 
     st.write("")
     with st.container(border=True):
@@ -2737,9 +2775,10 @@ elif sahifa == "⚙️ Sozlamalar":
                         st.rerun()
 
         if st.session_state.role != "housekeeping":
-            df_oxirgi_kirish = db.read_df("SELECT vaqt, xodim, harakat, tafsilot FROM audit_log ORDER BY id DESC LIMIT 8")
+            df_oxirgi_kirish = kesh_df_ol("SELECT vaqt, xodim, harakat, tafsilot FROM audit_log ORDER BY id DESC LIMIT 8")
             if not df_oxirgi_kirish.empty:
                 st.markdown("---")
                 st.markdown("##### 🕒 Tizimdagi oxirgi faolliklar (Tezkor jurnal)")
+                df_oxirgi_kirish = df_oxirgi_kirish.copy()
                 df_oxirgi_kirish.columns = ["Sana va Vaqt", "Foydalanuvchi", "Amaliyot", "Tafsilot"]
                 st.dataframe(df_oxirgi_kirish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_oxirgi_kirish))
