@@ -94,12 +94,6 @@ def sozlamani_saqla(kalit, qiymat):
         db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
 
 def dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False, maxsus_chegirma_foiz=0):
-    """
-    Hostel tariflari va chegirmalari kalkulyatori:
-    - Chet el fuqarolari uchun barcha xonalarda har bir joyga +50,000 UZS ustama (100k->150k, 110k->160k, 150k->200k, Lyuks 250k->300k).
-    - Agar Admin/CEO maxsus_chegirma_foiz (> 0) kiritsa, aynan shu foiz chegiriladi;
-    - Agar maxsus_chegirma_foiz == 0 bo'lsa va kunlar >= 7 bo'lsa, avtomatik haftalik chegirma (10%) qo'llanadi.
-    """
     soz = sozlamalarni_ol()
     sigim = XONALAR[tomon][xona][0]
     hisob_odam = sigim if toliq_xona else odam_soni
@@ -225,52 +219,81 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #ffffff !important;
         }
 
-        .stForm, div[data-testid="stExpander"] {
+        /* BARCHA KONTEYNERLAR, FORMALAR VA EXPANDERLAR TO'LIQ QORA FONDA BO'LISHI UCHUN */
+        .stForm,
+        div[data-testid="stForm"],
+        div[data-testid="stExpander"],
+        div[data-testid="stVerticalBlockBorderWrapper"] {
             background-color: #141724 !important;
-            border: 1px solid #262b40 !important;
+            border: 1px solid #2a324b !important;
             border-radius: 14px !important;
             padding: 16px !important;
         }
 
-        /* 1-SKRINSHOT TUZATISHI: MODAL OYNA (st.dialog) VA BARCHA ICHKI QATAMLARINI TO'LIQ QORA QILISH */
+        /* 1-SKRINSHOT TUZATISHI: HTML5 <dialog> VA MODAL OYNA PORTALINING BARCHA ELEMENTLARINI QORAYTIRISH */
+        dialog,
+        dialog[data-testid="stDialog"],
+        dialog[open],
+        div[data-testid="stDialog"],
+        div[data-testid="stDialog"] > div,
+        div[data-testid="stDialog"] > div > div,
         div[role="dialog"],
         div[role="dialog"] > div,
-        div[data-testid="stModal"] > div,
-        div[data-testid="stModal"] > div > div,
-        div[data-testid="stModal"] > div > div > div,
-        div[data-testid="stDialog"] > div > div,
+        div[aria-modal="true"],
+        div[data-baseweb="modal"] > div,
         div[data-baseweb="modal"] > div > div {
             background-color: #111420 !important;
-            color: #ffffff !important;
+            color: #f8fafc !important;
             border-color: #3b4461 !important;
         }
-        div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3,
-        div[role="dialog"] p, div[role="dialog"] label, div[role="dialog"] span,
-        div[data-testid="stModal"] h1, div[data-testid="stModal"] h2, div[data-testid="stModal"] h3,
-        div[data-testid="stModal"] p, div[data-testid="stModal"] label, div[data-testid="stModal"] span {
+        dialog *,
+        div[data-testid="stDialog"] label,
+        div[data-testid="stDialog"] p,
+        div[data-testid="stDialog"] h1,
+        div[data-testid="stDialog"] h2,
+        div[data-testid="stDialog"] h3,
+        div[data-testid="stDialog"] span,
+        div[role="dialog"] label,
+        div[role="dialog"] p,
+        div[role="dialog"] span,
+        div[aria-modal="true"] label,
+        div[aria-modal="true"] p,
+        div[aria-modal="true"] span {
             color: #f8fafc !important;
         }
-        div[role="dialog"] button[aria-label="Close"],
-        div[data-testid="stModal"] button[aria-label="Close"] {
+        dialog button[aria-label="Close"],
+        div[data-testid="stDialog"] button[aria-label="Close"],
+        div[role="dialog"] button[aria-label="Close"] {
             color: #ffffff !important;
-            background: #232a45 !important;
-            border: 1px solid #4c1d95 !important;
+            background-color: #232a45 !important;
+            border: 1px solid #6d28d9 !important;
             border-radius: 8px !important;
         }
 
-        /* BARCHA INPUT, SANALAR VA SOAT MAYDONLARIDA MATN RANGI ANIQ TO'Q KO'RINISHI UCHUN */
+        /* 2-SKRINSHOT TUZATISHI: INPUT MATNI TO'Q QORA, PLACEHOLDER ESA XIRA KULRANG BO'LISHI UCHUN */
         .stApp input,
+        dialog input,
         div[role="dialog"] input,
-        div[data-testid="stModal"] input,
+        div[data-testid="stDialog"] input,
         div[data-testid="stDateInput"] input,
         div[data-testid="stTimeInput"] input,
         div[data-testid="stNumberInput"] input,
         div[data-testid="stTextInput"] input,
         .stApp textarea {
             color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
             background-color: #f8fafc !important;
-            font-weight: 700 !important;
+            font-weight: 600 !important;
+            caret-color: #0f172a !important;
+        }
+        .stApp input::placeholder,
+        dialog input::placeholder,
+        div[role="dialog"] input::placeholder,
+        div[data-testid="stDialog"] input::placeholder,
+        .stApp textarea::placeholder {
+            color: #94a3b8 !important;
+            -webkit-text-fill-color: #94a3b8 !important;
+            font-weight: 400 !important;
+            opacity: 1 !important;
         }
         div[data-baseweb="input"],
         div[data-baseweb="base-input"],
@@ -278,18 +301,18 @@ def mukammal_ui_ux_sozla(tema_nomi):
             background-color: #f8fafc !important;
             color: #0f172a !important;
         }
-        div[data-baseweb="select"] *,
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] div,
         div[data-testid="stTimeInput"] div[data-baseweb="select"] * {
             color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            font-weight: 700 !important;
+            font-weight: 600 !important;
         }
         div[data-baseweb="tag"] {
             background-color: #7c3aed !important;
         }
+        div[data-baseweb="tag"] span,
         div[data-baseweb="tag"] * {
             color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
         }
         </style>
         """
@@ -340,6 +363,10 @@ def mukammal_ui_ux_sozla(tema_nomi):
             box-shadow: 0 4px 12px rgba(79,70,229,0.3) !important;
         }
         button[kind="primary"] *, .stFormSubmitButton > button * { color: #ffffff !important; }
+        .stApp input::placeholder, .stApp textarea::placeholder {
+            color: #94a3b8 !important;
+            font-weight: 400 !important;
+        }
         </style>
         """
         st.markdown(css, unsafe_allow_html=True)
@@ -395,11 +422,6 @@ def soat_matndan_time_ol(soat_str):
         return dt_time(hozir_t.hour, hozir_t.minute)
 
 def bron_shu_kunda_faolmi(r_kirish, r_chiqish, r_holat, tekshir_sana_str):
-    """
-    12:00 dan 12:00 gacha bo'lgan sutka qoidasi bo'yicha mijoz tanlangan sanada xonada bor-yo'qligini aniqlaydi.
-    Agar mijoz erta tongda (00:00–11:59) kelib, shu kuni 12:00 da chiqib ketadigan bo'lsa
-    (ya'ni kirish_sanasi == chiqish_sanasi == tekshir_sana_str) va hali 'Chiqib ketgan' bo'lmasa — u faol hisoblanadi!
-    """
     if str(r_holat) == 'Chiqib ketgan':
         return False
     k_s = str(r_kirish or '')
@@ -547,21 +569,20 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
 
 # =========================================================
 # YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
-# (12:00 SUTKA MANTIG'I + CHET EL +50K USTAMA + FOIZLI CHEGIRMA BILAN!)
 # =========================================================
 def render_qabul_formasi(form_key_suffix="main"):
+    mukammal_ui_ux_sozla(st.session_state.ui_tema)
     soz = sozlamalarni_ol()
     cheg_hafta_foiz = int(float(soz.get("chegirma_hafta", 10) or 10))
     cheg_talaba_foiz = int(float(soz.get("chegirma_talaba", 50) or 50))
     hisob_soat_str = soz.get("hisob_soati", "12:00")
 
-    # 1-SKRINSHOT TUZATISHI: QANOT VA XONA TANLASH QORA KONTEYNER ICHIDA BO'LADI (OQ FONDA QOLIB KETMAYDI!)
     bg_box = "#141724" if is_dark else "#ffffff"
     bd_box = "#2a324b" if is_dark else "#cbd5e1"
     st.markdown(
         f"<div style='background:{bg_box}; border:1px solid {bd_box}; padding:10px 16px; border-radius:12px; margin-bottom:8px;'>"
-        f"<span style='font-size:14px; font-weight:700; color:#a78bfa;'>🛏️ Xona va Sektor tanlovi</span> &nbsp;|&nbsp; "
-        f"<span style='font-size:12.5px; opacity:0.85;'>Sutka hisobi: <b>12:00 dan ertangi 12:00 gacha</b> (Chet el fuqarolariga +50,000 UZS)</span></div>",
+        f"<span style='font-size:14px; font-weight:700; color:#a78bfa !important;'>🛏️ Xona va Sektor tanlovi</span> &nbsp;|&nbsp; "
+        f"<span style='font-size:12.5px; color:#cbd5e1 !important;'>Sutka hisobi: <b>12:00 dan ertangi 12:00 gacha</b> (Chet el fuqarolariga +50,000 UZS)</span></div>",
         unsafe_allow_html=True
     )
 
@@ -599,7 +620,6 @@ def render_qabul_formasi(form_key_suffix="main"):
 
     uz_now_form = toshkent_vaqti()
     default_time_obj = dt_time(uz_now_form.hour, uz_now_form.minute)
-    tonggi_kelish_default = (uz_now_form.hour < 12)
 
     with st.form(f"qabul_form_{form_key_suffix}", clear_on_submit=True, enter_to_submit=False):
         f_top1, f_top2 = st.columns([1.4, 1.6], gap="medium")
@@ -617,7 +637,7 @@ def render_qabul_formasi(form_key_suffix="main"):
         st.markdown("---")
         col1, col2, col3 = st.columns(3, gap="medium")
         with col1:
-            mijoz_ism = st.text_input("👤 Mehmon F.I.O (Ismi) *")
+            mijoz_ism = st.text_input("👤 Mehmon F.I.O (Ismi) *", placeholder="Masalan: Alisher Karimov")
             mijoz_tel = st.text_input("📞 Telefon raqami (ixtiyoriy):", placeholder="+998 90 123 45 67")
             jinsi = st.radio("🚻 Jinsi", ["Erkak", "Ayol"], horizontal=True)
             toifa = st.selectbox(
@@ -689,8 +709,6 @@ def render_qabul_formasi(form_key_suffix="main"):
                 kiritilgan_soat = kirish_soati_obj.hour if kirish_soati_obj else uz_now_form.hour
                 saq_turi = 'Hozir kirish' if bron_turi == "Hozir qabul qilish (Kirish)" else 'Bron'
 
-                # 12:00 SUTKA MANTIG'I:
-                # Agar mijoz tungi 00:00 dan kunduzgi 11:59 gacha kirib kelsa, 1-sutka shu kunning 12:00 ida tugaydi!
                 if saq_turi == 'Hozir kirish' and sutka_rejimi.startswith("Avtomatik") and kiritilgan_soat < 12:
                     chiqish_sanasi = kirish_sanasi + timedelta(days=max(0, kunlar - 1))
                     tonggi_sutka_belgi = True
@@ -834,7 +852,6 @@ if sahifa == "🏠 Boshqaruv paneli":
         df_barcha['odam_soni'] = df_barcha['odam_soni'].fillna(1).astype(int)
 
     jami_xonalar_soni = 36
-    # 12:00 SUTKA BO'YICHA FAOL MEHMONLAR (TONGDA KELIB BUGUN 12:00 DA CHIQADIGANLAR HAM KIRADI)
     if not df_barcha.empty:
         faol_mask = df_barcha.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], bugungi_sana), axis=1)
         faol_df = df_barcha[faol_mask]
@@ -1002,7 +1019,7 @@ if sahifa == "🏠 Boshqaruv paneli":
 
     if g_bosh_sana and g_tugash_sana:
         df_tol_filtr = df_tolovlar[(df_tolovlar['sana'] >= g_bosh_sana) & (df_tolovlar['sana'] <= g_tugash_sana)] if not df_tolovlar.empty else pd.DataFrame()
-        df_xar_filtr = df_xarajat[(df_xarajat['sana'] >= g_bosh_sana) & (df_xarajat['sana'] <= g_tugash_sana)] if not df_xarajat.empty else pd.DataFrame()
+        df_xar_filtr = df_xarajat[(df_xarajat['sana'] >= g_bosh_sana) & (df_xarajat['sana'] <= g_tugash_sana)] if not df_xar_filtr.empty else pd.DataFrame()
     else:
         df_tol_filtr = df_tolovlar
         df_xar_filtr = df_xarajat
