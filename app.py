@@ -304,16 +304,31 @@ def dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False
     return yakuniy_kunlik, yakuniy_jami, amaldagi_chegirma
 
 # =========================================================
-# KORPORATIV UI/UX DIZAYN DVIJOGI (DARK & LIGHT MODE)
+# KORPORATIV UI/UX DIZAYN DVIJOGI (DARK & LIGHT MODE — 100% TO'LIQ TUZATILGAN)
 # =========================================================
 def mukammal_ui_ux_sozla(tema_nomi):
     if tema_nomi == "🌙 Qorong'u (Dark UI)":
         css = """
         <style>
+        /* 1. ASOSIY SAHIFA, TEPADAGI HEADER VA SIDEBAR FONI */
+        :root {
+            --primary-color: #8b5cf6 !important;
+            --background-color: #0b0d14 !important;
+            --secondary-background-color: #141724 !important;
+            --text-color: #f8fafc !important;
+        }
+        header[data-testid="stHeader"] {
+            background-color: #0b0d14 !important;
+            border-bottom: 1px solid #1e2436 !important;
+        }
+        header[data-testid="stHeader"] * {
+            color: #cbd5e1 !important;
+        }
         .block-container { padding-top: 2.8rem !important; padding-bottom: 3rem !important; }
         .stApp { background-color: #0b0d14 !important; color: #f8fafc !important; }
         section[data-testid="stSidebar"] { background-color: #111420 !important; border-right: 1px solid #1e2436 !important; }
         
+        /* 2. BARCHA MATNLAR VA SARLAVHALAR */
         .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
         .stApp label, .stApp p, .stApp li,
         div[data-testid="stMarkdownContainer"] p,
@@ -329,6 +344,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
             opacity: 1 !important;
         }
 
+        /* 3. METRIC KARTOCHKALAR */
         div[data-testid="metric-container"],
         div[data-testid="stMetric"] {
             background-color: #151928 !important;
@@ -355,6 +371,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #f8fafc !important;
         }
 
+        /* 4. TUGMALAR (BUTTONS) */
         .stButton > button, .stDownloadButton > button {
             background-color: #171c2e !important;
             color: #e2e8f0 !important;
@@ -376,7 +393,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
         .stButton > button:hover, .stDownloadButton > button:hover {
             background-color: #232a45 !important;
             border-color: #8b5cf6 !important;
-            transform: translateX(2px);
+            color: #ffffff !important;
         }
         button[kind="primary"], .stFormSubmitButton > button {
             background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
@@ -391,16 +408,56 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #ffffff !important;
         }
 
+        /* 5. EXPANDER (YIG'ILUVCHI BLOKLAR — HOVERDA OQ BO'LIB QOLMASLIGI UCHUN!) */
         .stForm,
         div[data-testid="stForm"],
-        div[data-testid="stExpander"],
         div[data-testid="stVerticalBlockBorderWrapper"] {
             background-color: #141724 !important;
             border: 1px solid #2a324b !important;
             border-radius: 14px !important;
             padding: 16px !important;
         }
+        div[data-testid="stExpander"] {
+            background-color: #141724 !important;
+            border: 1px solid #2a324b !important;
+            border-radius: 14px !important;
+            overflow: hidden !important;
+        }
+        div[data-testid="stExpander"] details {
+            background-color: #141724 !important;
+            border: none !important;
+        }
+        div[data-testid="stExpander"] summary,
+        div[data-testid="stExpander"] details > summary {
+            background-color: #181c2e !important;
+            color: #f8fafc !important;
+            padding: 12px 16px !important;
+            border-radius: 12px !important;
+            transition: background-color 0.15s ease !important;
+        }
+        div[data-testid="stExpander"] summary:hover,
+        div[data-testid="stExpander"] details > summary:hover,
+        div[data-testid="stExpander"] summary:focus,
+        div[data-testid="stExpander"] summary:active {
+            background-color: #232a45 !important;
+            color: #ffffff !important;
+        }
+        div[data-testid="stExpander"] summary *,
+        div[data-testid="stExpander"] summary:hover *,
+        div[data-testid="stExpander"] summary span,
+        div[data-testid="stExpander"] summary p,
+        div[data-testid="stExpander"] summary svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+        div[data-testid="stExpanderDetails"] {
+            background-color: #141724 !important;
+            color: #f8fafc !important;
+            padding: 14px 16px !important;
+            border-top: 1px solid #262b40 !important;
+        }
 
+        /* 6. MODAL OYNA (st.dialog) PORTALI */
         dialog,
         dialog[data-testid="stDialog"],
         dialog[open],
@@ -441,6 +498,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
             border-radius: 8px !important;
         }
 
+        /* 7. INPUTLAR, SANALAR, SOATLAR VA NUMBER (+/-) TUGMALARI */
         .stApp input,
         dialog input,
         div[role="dialog"] input,
@@ -466,6 +524,20 @@ def mukammal_ui_ux_sozla(tema_nomi):
             font-weight: 400 !important;
             opacity: 1 !important;
         }
+        div[data-testid="stNumberInput"] button {
+            background-color: #e2e8f0 !important;
+            color: #0f172a !important;
+            border-left: 1px solid #cbd5e1 !important;
+        }
+        div[data-testid="stNumberInput"] button:hover {
+            background-color: #cbd5e1 !important;
+            color: #0f172a !important;
+        }
+        div[data-testid="stNumberInput"] button *,
+        div[data-testid="stNumberInput"] button svg {
+            color: #0f172a !important;
+            fill: #0f172a !important;
+        }
         div[data-baseweb="input"],
         div[data-baseweb="base-input"],
         div[data-baseweb="select"] > div {
@@ -474,9 +546,29 @@ def mukammal_ui_ux_sozla(tema_nomi):
         }
         div[data-baseweb="select"] span,
         div[data-baseweb="select"] div,
+        div[data-baseweb="select"] svg,
+        div[data-testid="stDateInput"] svg,
+        div[data-testid="stTimeInput"] svg,
         div[data-testid="stTimeInput"] div[data-baseweb="select"] * {
             color: #0f172a !important;
+            fill: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
             font-weight: 600 !important;
+        }
+        /* OCHILUVCHI RO'YXATLAR (DROPDOWN MENU / POPOVER) */
+        div[data-baseweb="popover"] *,
+        ul[role="listbox"],
+        ul[role="listbox"] li,
+        div[role="listbox"] * {
+            background-color: #151928 !important;
+            color: #f8fafc !important;
+            -webkit-text-fill-color: #f8fafc !important;
+        }
+        ul[role="listbox"] li:hover,
+        ul[role="listbox"] li[aria-selected="true"] {
+            background-color: #6d28d9 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
         div[data-baseweb="tag"] {
             background-color: #7c3aed !important;
@@ -484,6 +576,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
         div[data-baseweb="tag"] span,
         div[data-baseweb="tag"] * {
             color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
         </style>
         """

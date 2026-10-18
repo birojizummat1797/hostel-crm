@@ -127,12 +127,18 @@ class DBWrapper:
 
     def execute(self, sql, params=()):
         self._ensure_conn()
+        sql_clean = sql.strip().upper()
         sql = self._prepare_sql(sql)
         cur = self.conn.cursor()
         try:
             cur.execute(sql, params)
             if not self.is_pg:
                 self.conn.commit()
+            if sql_clean.startswith(("INSERT", "UPDATE", "DELETE")):
+                try:
+                    st.cache_data.clear()
+                except Exception:
+                    pass
             return cur
         except Exception as e:
             if self.is_pg:
