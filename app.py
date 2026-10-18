@@ -416,19 +416,20 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #f8fafc !important;
             border-color: #3b4461 !important;
         }
-        dialog *,
+        dialog label,
+        dialog p,
+        dialog h1,
+        dialog h2,
+        dialog h3,
         div[data-testid="stDialog"] label,
         div[data-testid="stDialog"] p,
         div[data-testid="stDialog"] h1,
         div[data-testid="stDialog"] h2,
         div[data-testid="stDialog"] h3,
-        div[data-testid="stDialog"] span,
         div[role="dialog"] label,
         div[role="dialog"] p,
-        div[role="dialog"] span,
         div[aria-modal="true"] label,
-        div[aria-modal="true"] p,
-        div[aria-modal="true"] span {
+        div[aria-modal="true"] p {
             color: #f8fafc !important;
         }
         dialog button[aria-label="Close"],
@@ -450,8 +451,9 @@ def mukammal_ui_ux_sozla(tema_nomi):
         div[data-testid="stTextInput"] input,
         .stApp textarea {
             color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
             background-color: #f8fafc !important;
-            font-weight: 600 !important;
+            font-weight: 700 !important;
             caret-color: #0f172a !important;
         }
         .stApp input::placeholder,
