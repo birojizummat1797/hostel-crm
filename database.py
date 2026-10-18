@@ -166,7 +166,7 @@ def get_db():
 db = get_db()
 
 # ==========================================
-# 2. XONALAR RO'YXATI VA JOYLAR (CHAPDAN O'NGGA)
+# 2. XONALAR RO'YXATI VA JADVALLARNI YARATISH
 # ==========================================
 XONALAR = {
     "Chap tomon": {"1-xona": (4, 100000), "2-xona": (4, 100000), "3-xona": (4, 100000), "4-xona": (4, 100000), "5-xona": (4, 100000), "6-xona": (4, 100000), "7-xona": (2, 150000), "8-xona": (4, 100000), "9-xona": (4, 100000), "10-xona": (3, 110000), "11-xona": (2, 150000), "12-xona": (4, 100000), "13-xona": (4, 100000), "14-xona": (2, 150000)},
@@ -188,53 +188,6 @@ for t_nomi, x_dict in XONALAR.items():
 
 MUDDATLAR = {"Kunlik": 1, "1 hafta (7 kun)": 7, "10 kun": 10, "15 kun": 15, "1 oylik (30 kun)": 30}
 
-def xona_joylar_royxati(tomon, xona_nomi):
-    """
-    Bosh boshqaruvchi talabi bo'yicha:
-    Dvuxspalniydan (O'rtadagi 15-21 xonalar) tashqari barcha xonalarda
-    chapdan o'ngga qarab krovat/joy nomlarini qaytaradi.
-    """
-    if tomon == "O'rtadagi":
-        return ["Dvuxspalniy (Umumiy)"]
-    sigim = xona_sigimini_ol(xona_nomi)
-    if sigim == 2:
-        return ["1-joy (Chap krovat)", "2-joy (O'ng krovat)"]
-    elif sigim == 3:
-        return ["1-joy (Chap chetki)", "2-joy (O'rta krovat)", "3-joy (O'ng chetki)"]
-    else:
-        return [
-            "1-joy (Chapdan 1-krovat)",
-            "2-joy (Chapdan 2-krovat)",
-            "3-joy (O'ngdan 2-krovat)",
-            "4-joy (O'ng chetki krovat)"
-        ]
-
-def xonadagi_band_joy_nomlari(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
-    """Tanlangan sanalarda xonadagi qaysi joylar (1-joy, 2-joy...) bandligini qaytaradi"""
-    if exclude_mijoz_id:
-        rows = db.fetchall(
-            "SELECT joy_raqami, xona_turi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
-        )
-    else:
-        rows = db.fetchall(
-            "SELECT joy_raqami, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, chiqish_str, kirish_str)
-        )
-    band_nomlar = set()
-    tomon = XONA_TOMON_MAP.get(xona_nomi, "Chap tomon")
-    barcha_j = xona_joylar_royxati(tomon, xona_nomi)
-    for j_str, x_tur in rows:
-        if "To'liq band" in str(x_tur or ''):
-            return set(barcha_j)
-        if j_str:
-            for qism in str(j_str).split(","):
-                q_clean = qism.strip()
-                for bj in barcha_j:
-                    if q_clean in bj or bj.split(" ")[0] == q_clean.split(" ")[0]:
-                        band_nomlar.add(bj)
-    return band_nomlar
-
 @st.cache_resource
 def init_db():
     db.execute("""
@@ -245,7 +198,7 @@ def init_db():
             kunlik_narx REAL, jami_summa REAL, faktik_narx REAL, tolagan_summa REAL,
             qoldiq REAL, tolov_turi TEXT, tolov_tafsiloti TEXT, holat TEXT,
             kirish_sanasi TEXT, chiqish_sanasi TEXT, bron_turi TEXT DEFAULT 'Hozir kirish',
-            izoh TEXT DEFAULT '', telefon TEXT DEFAULT '', joy_raqami TEXT DEFAULT ''
+            izoh TEXT DEFAULT '', telefon TEXT DEFAULT ''
         )
     """)
 
@@ -317,7 +270,6 @@ def init_db():
         "ALTER TABLE bronlar ADD COLUMN bron_turi TEXT DEFAULT 'Hozir kirish'", 
         "ALTER TABLE bronlar ADD COLUMN izoh TEXT DEFAULT ''",
         "ALTER TABLE bronlar ADD COLUMN telefon TEXT DEFAULT ''",
-        "ALTER TABLE bronlar ADD COLUMN joy_raqami TEXT DEFAULT ''",
         "ALTER TABLE mahsulotlar ADD COLUMN sub_kategoriya TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN hajmi TEXT DEFAULT ''", 
         "ALTER TABLE mahsulotlar ADD COLUMN izoh TEXT DEFAULT ''",
@@ -356,7 +308,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 3. XONA TOZALIGI VA BIZNES MANTIQ FUNKSIYALARI
+# 3. XONA TOZALIGI VA SUTKA (12:00-12:00) MANTIQ FUNKSIYALARI
 # ==========================================
 def xona_tozalik_ozgartir(xona_nomi, yangi_holat="Tozalash kerak"):
     hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M")
@@ -382,52 +334,89 @@ def xona_sigimini_ol(xona_nomi):
     return 0
 
 def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
+    """
+    Xonadagi band joylarni hisoblaydi (shu jumladan erta tongda 00:00-11:59 da kelib,
+    shu kuni 12:00 da chiqib ketadigan kirish_sanasi == chiqish_sanasi bronlarni ham hisobga oladi).
+    """
     sigim = xona_sigimini_ol(xona_nomi)
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+
     if exclude_mijoz_id:
         rows = db.fetchall(
-            "SELECT odam_soni, xona_turi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
+            "SELECT odam_soni, xona_turi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan'",
+            (xona_nomi, exclude_mijoz_id)
         )
     else:
         rows = db.fetchall(
-            "SELECT odam_soni, xona_turi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, chiqish_str, kirish_str)
+            "SELECT odam_soni, xona_turi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'",
+            (xona_nomi,)
         )
+
     band = 0
-    for r_odam, r_tur in rows:
-        if "To'liq band" in str(r_tur or ''):
-            band += sigim
-        else:
-            band += int(r_odam or 1)
+    for r_odam, r_tur, r_kir, r_chiq in rows:
+        r_kir = str(r_kir or '')
+        r_chiq = str(r_chiq or '')
+        # Agar erta tongda kelib, bugun 12:00 da chiqadigan mijoz bo'lsa (r_kir == r_chiq)
+        ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
+        ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
+
+        if r_kir < ef_yangi_chiq and ef_chiq > kirish_str:
+            if "To'liq band" in str(r_tur or ''):
+                band += sigim
+            else:
+                band += int(r_odam or 1)
     return min(sigim, band)
 
 def xona_jinsini_tekshir(xona_nomi, kirish_str, chiqish_str, yangi_jins, exclude_mijoz_id=None):
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+
     if exclude_mijoz_id:
         rows = db.fetchall(
-            "SELECT jinsi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, exclude_mijoz_id, chiqish_str, kirish_str)
+            "SELECT jinsi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND mijoz_id!=? AND holat!='Chiqib ketgan'",
+            (xona_nomi, exclude_mijoz_id)
         )
     else:
         rows = db.fetchall(
-            "SELECT jinsi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan' AND kirish_sanasi<? AND chiqish_sanasi>?",
-            (xona_nomi, chiqish_str, kirish_str)
+            "SELECT jinsi, kirish_sanasi, chiqish_sanasi FROM bronlar WHERE xona=? AND holat!='Chiqib ketgan'",
+            (xona_nomi,)
         )
-    for (mavjud_jins,) in rows:
-        if mavjud_jins and mavjud_jins != yangi_jins:
-            return mavjud_jins
+    for mavjud_jins, r_kir, r_chiq in rows:
+        r_kir = str(r_kir or '')
+        r_chiq = str(r_chiq or '')
+        ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
+        ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
+        if r_kir < ef_yangi_chiq and ef_chiq > kirish_str:
+            if mavjud_jins and mavjud_jins != yangi_jins:
+                return mavjud_jins
     return None
 
-def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False):
+def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False, maxsus_chegirma_foiz=None):
+    """
+    Standart va Chet el fuqarolari uchun (+50,000 UZS har bir joyga) narx hisoblaydi:
+    - 4 kishilik: 100,000 UZS -> Chet el: 150,000 UZS
+    - 3 kishilik: 110,000 UZS -> Chet el: 160,000 UZS
+    - 2 kishilik: 150,000 UZS -> Chet el: 200,000 UZS
+    - O'rta Lyuks (Dvuxspalniy): 250,000 UZS -> Chet el: 300,000 UZS
+    """
     sigim, bazaviy_narx = XONALAR[tomon][xona]
     hisob_odam = sigim if toliq_xona else odam_soni
     if tomon == "O'rtadagi":
         kunlik = 300000 if toifa == "Chet el fuqarosi" else 250000
     else:
-        if toifa == "Chet el fuqarosi": kunlik = (bazaviy_narx + 50000) * hisob_odam
-        elif toifa == "Talaba (Student)": kunlik = (bazaviy_narx * 0.5) * hisob_odam
-        else: kunlik = bazaviy_narx * hisob_odam
+        if toifa == "Chet el fuqarosi":
+            kunlik = (bazaviy_narx + 50000) * hisob_odam
+        elif toifa == "Talaba (Student)":
+            kunlik = (bazaviy_narx * 0.5) * hisob_odam
+        else:
+            kunlik = bazaviy_narx * hisob_odam
+
     jami = kunlik * kunlar
-    if kunlar >= 7: jami = jami * 0.9
+    if maxsus_chegirma_foiz is not None and maxsus_chegirma_foiz > 0:
+        jami = jami * ((100.0 - float(maxsus_chegirma_foiz)) / 100.0)
+    elif kunlar >= 7:
+        jami = jami * 0.9
     return kunlik, jami
 
 def id_yaratish(jinsi, kirish_sanasi_obj, toifa):
@@ -491,7 +480,7 @@ def avto_kenglik_sozla(df):
         if any(k in col_lower for k in ["izoh", "tafsilot", "batafsil", "ma'lumot", "to'lov turi"]):
             px = max(280, min(max_len * 9 + 40, 1200))
             config[col] = st.column_config.Column(label=str(col), width=px)
-        elif any(k in col_lower for k in ["mijoz", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt", "xona", "joy"]):
+        elif any(k in col_lower for k in ["mijoz", "mehmon", "mahsulot", "nomi", "kategoriya", "xodim", "harakat", "kirish", "chiqish", "vaqt", "xona"]):
             px = max(160, min(max_len * 9 + 30, 500))
             config[col] = st.column_config.Column(label=str(col), width=px)
     return config
@@ -529,18 +518,18 @@ def chiroyli_kartochka(icon, title, value, bg_color):
     is_dark = st.session_state.get("ui_tema", "🌙 Qorong'u (Dark UI)") == "🌙 Qorong'u (Dark UI)"
     if is_dark:
         return (
-            f"<div style='background: #141724; border: 1px solid #2d344d; border-top: 4px solid {bg_color}; "
-            f"padding: 16px; border-radius: 14px; color: #ffffff; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
-            f"margin-bottom: 16px; font-family: sans-serif;'>"
+            f"<div style='background: #141724; border: 1px solid #262b40; border-top: 4px solid {bg_color}; "
+            f"padding: 16px; border-radius: 14px; color: #f8fafc; box-shadow: 0 6px 16px rgba(0,0,0,0.35); "
+            f"margin-bottom: 18px; font-family: sans-serif;'>"
             f"<div style='font-size: 13px; color: #cbd5e1; font-weight: 600; margin-bottom: 6px;'>{icon} {title}</div>"
-            f"<div style='font-size: 23px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
+            f"<div style='font-size: 21px; font-weight: 800; color: #ffffff;'>{value}</div></div>"
         )
     return (
         f"<div style='background: linear-gradient(135deg, {bg_color} 0%, {bg_color}dd 100%); "
         f"padding: 16px; border-radius: 14px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.12); "
-        f"margin-bottom: 16px; font-family: sans-serif;'>"
+        f"margin-bottom: 18px; font-family: sans-serif;'>"
         f"<div style='font-size: 13px; font-weight: 600; opacity: 0.95; margin-bottom: 6px;'>{icon} {title}</div>"
-        f"<div style='font-size: 23px; font-weight: bold; color: white;'>{value}</div></div>"
+        f"<div style='font-size: 21px; font-weight: bold; color: white;'>{value}</div></div>"
     )
 
 def rangla_jadval(row):
@@ -564,7 +553,7 @@ def rangla_jadval(row):
         
     if is_dark:
         if holat_val == 'Chiqib ketgan':
-            return ['background-color: #1e293b; color: #cbd5e1'] * len(row)
+            return ['background-color: #1e293b; color: #94a3b8'] * len(row)
         elif qoldiq_val > 0:
             return ['background-color: #451a1a; color: #fca5a5; font-weight: 600'] * len(row)
         elif (chiqish_raw == bugun_str and soat >= 6) or (chiqish_raw != '' and chiqish_raw < bugun_str):
@@ -580,77 +569,3 @@ def rangla_jadval(row):
             return ['background-color: #fef08a; color: #854d0e; font-weight: 600'] * len(row)
         else:
             return ['background-color: #f0fdf4; color: #15803d'] * len(row)
-
-def tema_css_yuklash(tema_nomi):
-    umumiy_nav_css = (
-        ".block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important; }"
-        "h1, h2, h3 { letter-spacing: -0.3px; margin-bottom: 0.7rem !important; }"
-        "div[data-testid='stVerticalBlock'] > div { margin-bottom: 0.25rem; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] { gap: 7px !important; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] > label { "
-        "padding: 10px 14px !important; border-radius: 10px !important; width: 100% !important; "
-        "transition: all 0.2s ease !important; cursor: pointer !important; margin: 0 !important; "
-        "border: 1px solid rgba(148,163,184,0.18) !important; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] > label > div:first-child { display: none !important; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { font-size: 14px !important; font-weight: 600 !important; margin: 0 !important; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) { "
-        "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; "
-        "border-color: #8b5cf6 !important; box-shadow: 0 4px 12px rgba(124,58,237,0.35) !important; }"
-        "section[data-testid='stSidebar'] div[role='radiogroup'] > label:has(input:checked) p { color: #ffffff !important; }"
-    )
-
-    if tema_nomi == "🌙 Qorong'u (Dark UI)":
-        st.markdown(
-            "<style>"
-            + umumiy_nav_css +
-            ".stApp { background-color: #0b0d14; color: #f1f5f9; }"
-            "section[data-testid='stSidebar'] { background-color: #111420 !important; border-right: 1px solid #1e2436; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { background-color: #171b2b; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { background-color: #1f253a; border-color: #4c1d95 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { color: #cbd5e1 !important; }"
-            "div[data-testid='metric-container'] { background-color: #141724 !important; border: 1px solid #262b40 !important; padding: 16px 20px; border-radius: 14px; border-left: 5px solid #7c3aed !important; color: #f8fafc !important; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }"
-            "div[data-testid='metric-container'] label { color: #94a3b8 !important; }"
-            "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #ffffff !important; }"
-            ".stForm, div[data-testid='stExpander'] { background-color: #141724 !important; border: 1px solid #262b40 !important; border-radius: 14px !important; padding: 14px !important; }"
-            ".stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label { color: #f1f5f9 !important; }"
-            ".stButton > button, .stDownloadButton > button { "
-            "background-color: #1e2436 !important; color: #f8fafc !important; border: 1px solid #334155 !important; "
-            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; transition: all 0.2s !important; }"
-            ".stButton > button p, .stButton > button span, .stDownloadButton > button p, .stDownloadButton > button span { color: #f8fafc !important; }"
-            ".stButton > button:hover, .stDownloadButton > button:hover { background-color: #2b334d !important; border-color: #7c3aed !important; }"
-            "button[kind='primary'], .stFormSubmitButton > button { "
-            "background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; border: none !important; "
-            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
-            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
-            "div[role='dialog'] { background-color: #141724 !important; color: #f8fafc !important; border: 1px solid #334155 !important; border-radius: 16px !important; }"
-            "div[role='dialog'] h1, div[role='dialog'] h2, div[role='dialog'] h3, div[role='dialog'] p, div[role='dialog'] label, div[role='dialog'] span { color: #f8fafc !important; }"
-            "div[role='dialog'] input { color: #0f172a !important; background-color: #f8fafc !important; }"
-            "</style>",
-            unsafe_allow_html=True
-        )
-    else:
-        st.markdown(
-            "<style>"
-            + umumiy_nav_css +
-            ".stApp { background-color: #f8fafc; color: #0f172a; }"
-            "section[data-testid='stSidebar'] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label { background-color: #f1f5f9; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label:hover { background-color: #e2e8f0; border-color: #6366f1 !important; }"
-            "section[data-testid='stSidebar'] div[role='radiogroup'] > label p { color: #1e293b !important; }"
-            "div[data-testid='metric-container'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; padding: 16px 20px; border-radius: 14px; border-left: 6px solid #4f46e5 !important; color: #0f172a !important; box-shadow: 2px 4px 12px rgba(0,0,0,0.05); }"
-            "div[data-testid='metric-container'] label { color: #475569 !important; }"
-            "div[data-testid='metric-container'] div[data-testid='stMetricValue'] { color: #0f172a !important; }"
-            ".stForm, div[data-testid='stExpander'] { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 14px !important; padding: 14px !important; }"
-            ".stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp label { color: #0f172a !important; }"
-            ".stButton > button, .stDownloadButton > button { "
-            "background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; "
-            "border-radius: 10px !important; font-weight: 600 !important; padding: 0.55rem 1rem !important; }"
-            ".stButton > button p, .stDownloadButton > button p { color: #0f172a !important; }"
-            ".stButton > button:hover, .stDownloadButton > button:hover { background-color: #f1f5f9 !important; border-color: #4f46e5 !important; }"
-            "button[kind='primary'], .stFormSubmitButton > button { "
-            "background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important; border: none !important; "
-            "color: #ffffff !important; border-radius: 10px !important; font-weight: 700 !important; }"
-            "button[kind='primary'] p, .stFormSubmitButton > button p { color: #ffffff !important; }"
-            "</style>",
-            unsafe_allow_html=True
-        )
