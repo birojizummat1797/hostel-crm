@@ -266,6 +266,13 @@ def init_db():
         )
     """)
 
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS tizim_sozlamalari (
+            kalit TEXT PRIMARY KEY,
+            qiymat TEXT
+        )
+    """)
+
     yangi_ustunlar = [
         "ALTER TABLE bronlar ADD COLUMN bron_turi TEXT DEFAULT 'Hozir kirish'", 
         "ALTER TABLE bronlar ADD COLUMN izoh TEXT DEFAULT ''",
@@ -303,6 +310,7 @@ def init_db():
     if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
         db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
         db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('ceo', 'ceo', '777', 'Boshqaruvchi (CEO)')")
+        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('tozalik', 'housekeeping', '111', 'Tozalik Xodimasi')")
     return True
 
 init_db()
@@ -334,10 +342,6 @@ def xona_sigimini_ol(xona_nomi):
     return 0
 
 def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
-    """
-    Xonadagi band joylarni hisoblaydi (shu jumladan erta tongda 00:00-11:59 da kelib,
-    shu kuni 12:00 da chiqib ketadigan kirish_sanasi == chiqish_sanasi bronlarni ham hisobga oladi).
-    """
     sigim = xona_sigimini_ol(xona_nomi)
     uz_now = toshkent_vaqti()
     bugun_str = uz_now.strftime("%Y-%m-%d")
@@ -357,7 +361,6 @@ def xonadagi_band_joyni_hisobla(xona_nomi, kirish_str, chiqish_str, exclude_mijo
     for r_odam, r_tur, r_kir, r_chiq in rows:
         r_kir = str(r_kir or '')
         r_chiq = str(r_chiq or '')
-        # Agar erta tongda kelib, bugun 12:00 da chiqadigan mijoz bo'lsa (r_kir == r_chiq)
         ef_chiq = (datetime.strptime(r_chiq, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if (r_kir == r_chiq and r_kir >= bugun_str) else r_chiq
         ef_yangi_chiq = (datetime.strptime(chiqish_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") if kirish_str == chiqish_str else chiqish_str
 
@@ -393,13 +396,6 @@ def xona_jinsini_tekshir(xona_nomi, kirish_str, chiqish_str, yangi_jins, exclude
     return None
 
 def narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False, maxsus_chegirma_foiz=None):
-    """
-    Standart va Chet el fuqarolari uchun (+50,000 UZS har bir joyga) narx hisoblaydi:
-    - 4 kishilik: 100,000 UZS -> Chet el: 150,000 UZS
-    - 3 kishilik: 110,000 UZS -> Chet el: 160,000 UZS
-    - 2 kishilik: 150,000 UZS -> Chet el: 200,000 UZS
-    - O'rta Lyuks (Dvuxspalniy): 250,000 UZS -> Chet el: 300,000 UZS
-    """
     sigim, bazaviy_narx = XONALAR[tomon][xona]
     hisob_odam = sigim if toliq_xona else odam_soni
     if tomon == "O'rtadagi":
@@ -432,6 +428,75 @@ def jurnalga_yozish(obyekt_id, xodim, harakat, tafsilot):
     hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M:%S")
     db.execute("INSERT INTO audit_log (vaqt, mijoz_id, xodim, harakat, tafsilot) VALUES (?,?,?,?,?)", (hozir, obyekt_id, xodim, harakat, tafsilot))
 
+# =========================================================
+# 24 SOATLIK AVTO-SVODKA (EGASI VA CEO UCHUN ALOHIDA MAZMUNDA!)
+# =========================================================
+def kunlik_svodka_yubor(xodim="Avto-Tizim (Y.S.H.)", davr_sarlavha="24 soatlik Sutkalik Svodka"):
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+    kecha_str = (uz_now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    df_b = db.read_df("SELECT * FROM bronlar")
+    df_tol = db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana IN (?, ?)", (kecha_str, bugun_str))
+    df_sav = db.read_df("SELECT * FROM savdolar WHERE sana IN (?, ?)", (kecha_str, bugun_str))
+    df_xar = db.read_df("SELECT * FROM xarajatlar WHERE sana IN (?, ?)", (kecha_str, bugun_str))
+    tozalik_map = barcha_xona_tozalik_ol()
+
+    if not df_b.empty:
+        df_b['odam_soni'] = df_b['odam_soni'].fillna(1).astype(int)
+        df_b['qoldiq'] = df_b['qoldiq'].fillna(0)
+        faol_df = df_b[(df_b['holat'] != 'Chiqib ketgan') & (df_b['kirish_sanasi'] <= bugun_str) & ((df_b['chiqish_sanasi'] > bugun_str) | (df_b['chiqish_sanasi'] == bugun_str))]
+        bugun_kirgan_df = df_b[df_b['kirish_sanasi'] == bugun_str]
+        kecha_kirgan_df = df_b[df_b['kirish_sanasi'] == kecha_str]
+        bugun_chiqqan_df = df_b[(df_b['chiqish_sanasi'] == bugun_str) & (df_b['holat'] == 'Chiqib ketgan')]
+    else:
+        faol_df = bugun_kirgan_df = kecha_kirgan_df = bugun_chiqqan_df = pd.DataFrame()
+
+    band_xonalar = len(set(faol_df['xona'].unique())) if not faol_df.empty else 0
+    faol_odam = int(faol_df['odam_soni'].sum()) if not faol_df.empty else 0
+    bugun_kir_odam = int(bugun_kirgan_df['odam_soni'].sum()) if not bugun_kirgan_df.empty else 0
+    kecha_kir_odam = int(kecha_kirgan_df['odam_soni'].sum()) if not kecha_kirgan_df.empty else 0
+    bugun_chiq_odam = int(bugun_chiqqan_df['odam_soni'].sum()) if not bugun_chiqqan_df.empty else 0
+    joriy_qarz = float(df_b[(df_b['holat'] != 'Chiqib ketgan') & (df_b['qoldiq'] > 0)]['qoldiq'].sum()) if not df_b.empty else 0.0
+    iflos_xonalar = sum(1 for h in tozalik_map.values() if h == "Tozalash kerak")
+
+    df_tol_bugun = df_tol[df_tol['sana'] == bugun_str] if not df_tol.empty else pd.DataFrame()
+    yotoq_tushum_bugun = float(df_tol_bugun[df_tol_bugun['manba'] != 'Market Savdo']['summa'].fillna(0).sum()) if not df_tol_bugun.empty else 0.0
+    market_tushum_bugun = float(df_tol_bugun[df_tol_bugun['manba'] == 'Market Savdo']['summa'].fillna(0).sum()) if not df_tol_bugun.empty else 0.0
+
+    df_sav_bugun = df_sav[df_sav['sana'] == bugun_str] if not df_sav.empty else pd.DataFrame()
+    market_sof_foyda = float(df_sav_bugun['sof_foyda'].fillna(0).sum()) if (not df_sav_bugun.empty and 'sof_foyda' in df_sav_bugun.columns) else 0.0
+
+    df_xar_bugun = df_xar[df_xar['sana'] == bugun_str] if not df_xar.empty else pd.DataFrame()
+    xarajat_bugun = float(df_xar_bugun['summa'].fillna(0).sum()) if not df_xar_bugun.empty else 0.0
+    sof_kassa_bugun = (yotoq_tushum_bugun + market_tushum_bugun) - xarajat_bugun
+
+    # 1. MEHMONXONA EGASI UCHUN XABAR (FAQAT MIJOZLAR KIRDI-CHIQDISI VA YOTOQ HISOBI)
+    egasi_matn = (
+        f"📅 <b>Sana:</b> {bugun_str}\n"
+        f"🛏 <b>Hozir band xonalar:</b> {band_xonalar} / 36 ta\n"
+        f"👥 <b>Hozir yashayotgan mehmonlar:</b> {faol_odam} kishi\n"
+        f"📥 <b>Bugun kirgan mehmonlar:</b> {bugun_kir_odam} kishi ({len(bugun_kirgan_df)} ta bron)\n"
+        f"⏪ <b>Kecha kirgan mehmonlar:</b> {kecha_kir_odam} kishi ({len(kecha_kirgan_df)} ta bron)\n"
+        f"🛫 <b>Bugun chiqib ketganlar:</b> {bugun_chiq_odam} kishi\n"
+        f"💰 <b>Bugungi Yotoq Tushumi:</b> {yotoq_tushum_bugun:,.0f} UZS\n"
+        f"⚠️ <b>Mijozlarning joriy qarzi:</b> {joriy_qarz:,.0f} UZS"
+    )
+    tg_xabar_yubor(f"📊 {davr_sarlavha} (Mijozlar)", egasi_matn, xodim, kanal="egasi")
+
+    # 2. CEO UCHUN TO'LIQ HISOBOT (MIJOZLAR + MARKET + SKLAD + XARAJAT + SOF BALANS)
+    kam_tovarlar = db.fetchone("SELECT COUNT(*) FROM mahsulotlar WHERE qoldiq <= 5")[0] or 0
+    ceo_matn = (
+        f"{egasi_matn}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛒 <b>Bugungi Market Tushumi:</b> {market_tushum_bugun:,.0f} UZS (Sof foyda: +{market_sof_foyda:,.0f} UZS)\n"
+        f"➖ <b>Bugungi Xarajatlar:</b> -{xarajat_bugun:,.0f} UZS\n"
+        f"🏦 <b>Bugungi Sof Kassa Balansi:</b> <b>{sof_kassa_bugun:,.0f} UZS</b>\n"
+        f"🧹 <b>Tozalash kerak bo'lgan xonalar:</b> {iflos_xonalar} ta\n"
+        f"📦 <b>Skladda kam qolgan tovarlar:</b> {kam_tovarlar} xil"
+    )
+    return tg_xabar_yubor(f"👑 {davr_sarlavha} (To'liq Moliya & Operatsiya)", ceo_matn, xodim, kanal="ceo")
+
 def avto_checkout_tekshir():
     uz_now = toshkent_vaqti()
     bugun_str = uz_now.strftime("%Y-%m-%d")
@@ -462,8 +527,35 @@ def avto_checkout_tekshir():
             f"👤 <b>Mijoz:</b> {m_ism} ({m_odam} kishi)\n"
             f"🛏 <b>Bo'shagan xona:</b> {m_xona} (🧹 Tozalashga berildi)\n"
             f"⏰ <b>Sabab:</b> Mijozning yashash muddati (<b>{m_chiqish} soat 12:00</b>) yakunlanganligi sababli avtomatik arxivga o'tkazildi.",
-            "Avto-Nazorat (Y.S.H. ERP)"
+            "Avto-Nazorat (Y.S.H. ERP)",
+            kanal="mijoz"
         )
+
+    # AVTO-SVODKA TEKSHIRUVI (12:00 VA 00:00 DA DUBLIKATSIZ JO'NATISH)
+    try:
+        r_rejim = db.fetchone("SELECT qiymat FROM tizim_sozlamalari WHERE kalit='svodka_rejim'")
+        svodka_rejim = r_rejim[0] if r_rejim else "Har kuni 12:00 da (Sutka yakuni)"
+
+        if "12:00" in svodka_rejim or "Ikkalasi" in svodka_rejim:
+            if soat >= 12:
+                r_12 = db.fetchone("SELECT qiymat FROM tizim_sozlamalari WHERE kalit='oxirgi_svodka_12'")
+                if not r_12 or r_12[0] != bugun_str:
+                    if r_12:
+                        db.execute("UPDATE tizim_sozlamalari SET qiymat=? WHERE kalit='oxirgi_svodka_12'", (bugun_str,))
+                    else:
+                        db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES ('oxirgi_svodka_12', ?)", (bugun_str,))
+                    kunlik_svodka_yubor("Avto-Svodka (12:00)", "12:00 dan 12:00 gacha 24 soatlik Svodka")
+
+        if "00:00" in svodka_rejim or "Ikkalasi" in svodka_rejim:
+            r_00 = db.fetchone("SELECT qiymat FROM tizim_sozlamalari WHERE kalit='oxirgi_svodka_00'")
+            if not r_00 or r_00[0] != bugun_str:
+                if r_00:
+                    db.execute("UPDATE tizim_sozlamalari SET qiymat=? WHERE kalit='oxirgi_svodka_00'", (bugun_str,))
+                else:
+                    db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES ('oxirgi_svodka_00', ?)", (bugun_str,))
+                kunlik_svodka_yubor("Avto-Svodka (00:00)", "Kunlik 00:00 Svodka")
+    except Exception:
+        pass
 
 def avto_kenglik_sozla(df):
     config = {}

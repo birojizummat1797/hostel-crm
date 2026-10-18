@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import re
+import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta, timezone, time as dt_time
 from database import (
     db, init_db, IS_POSTGRES, XONALAR, BARCHA_XONALAR_ROYXATI, XONA_TOMON_MAP, MUDDATLAR,
@@ -28,7 +30,7 @@ if 'faol_sahifa' not in st.session_state:
     st.session_state.faol_sahifa = st.query_params.get("page", "🏠 Boshqaruv paneli")
 
 # =========================================================
-# DINAMIK REGLAMENT VA TARIFLAR BAZASI (CEO BOSHQARUVI UCHUN)
+# DINAMIK REGLAMENT, TARIFLAR VA TELEGRAM RO'YXAT BAZASI
 # =========================================================
 def init_reglament_db():
     db.execute("""
@@ -47,6 +49,12 @@ def init_reglament_db():
         "chegirma_talaba": "50",
         "chegirma_hafta": "10",
         "hisob_soati": "12:00",
+        "tg_token": "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE",
+        "ceo_chat_id": "6483211079",
+        "owner_chat_id": "",
+        "svodka_rejimi": "Har kuni 12:00 va 00:00 da",
+        "oxirgi_svodka_12": "",
+        "oxirgi_svodka_00": "",
         "reg_chap": (
             "**🛏️ Chap qanot (1-xonadan 14-xonagacha — 14 ta xona):**\n"
             "- **4 kishilik xonalar (1, 2, 3, 4, 5, 6, 8, 9, 12, 13):** Mahalliy `100,000 UZS` | Chet el `150,000 UZS` / joy\n"
@@ -93,6 +101,162 @@ def sozlamani_saqla(kalit, qiymat):
     else:
         db.execute("INSERT INTO tizim_sozlamalari (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
 
+# =========================================================
+# IKKI KANALLI TELEGRAM MOTORI (CEO VA MEHMONXONA EGASI UCHUN)
+# =========================================================
+def _tg_direct_send(token, chat_id, html_text):
+    if not token or not str(chat_id).strip():
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{token.strip()}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": str(chat_id).strip(),
+            "text": html_text,
+            "parse_mode": "HTML"
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=data)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+def aqlli_tg_xabar(sarlavha, matn, xodim, turi="mijoz", muhim=False):
+    """
+    turi = 'mijoz' -> Ham CEO ga, ham Mehmonxona Egasiga (Owner) boradi.
+    turi = 'moliya' (Market, Sklad, Xarajat, Tarif) -> Faqat CEO ga boradi.
+    """
+    soz = sozlamalarni_ol()
+    token = soz.get("tg_token", "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE")
+    ceo_id = soz.get("ceo_chat_id", "6483211079")
+    owner_id = soz.get("owner_chat_id", "").strip()
+
+    # 1. CEO ga yuborish (barcha jarayonlar)
+    tg_xabar_yubor(sarlavha, matn, xodim, muhim=muhim)
+
+    # 2. Mehmonxona Egasiga yuborish (faqat mijozlar kirdi-chiqdisi va yotoq to'lovlari)
+    if turi == "mijoz" and owner_id and owner_id != str(ceo_id).strip():
+        uz_vaqt = toshkent_vaqti().strftime("%d.%m.%Y | %H:%M")
+        belgi = "🚨 <b>[MUHIM]</b> " if muhim else "🏨 "
+        xabar_matni = (
+            f"{belgi}<b>Y.S.H. — MEHMONLAR HISOBOTI</b>\n"
+            f"📌 <b>Amaliyot:</b> {sarlavha}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"{matn}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"👤 <b>Mas'ul:</b> {xodim}\n"
+            f"🕒 <b>Vaqt:</b> {uz_vaqt}"
+        )
+        _tg_direct_send(token, owner_id, xabar_matni)
+
+# =========================================================
+# 24 SOATLIK AVTOMATIK VA QO'LDA SVODKA YUBORISH TIZIMI
+# =========================================================
+def kunlik_svodka_shakllantir_va_yubor(xodim_ismi="Avto-Tizim (Y.S.H.)", majburiy=False):
+    soz = sozlamalarni_ol()
+    rejim = soz.get("svodka_rejimi", "Har kuni 12:00 va 00:00 da")
+    uz_now = toshkent_vaqti()
+    bugun_str = uz_now.strftime("%Y-%m-%d")
+    kecha_str = (uz_now.date() - timedelta(days=1)).strftime("%Y-%m-%d")
+    soat = uz_now.hour
+
+    yuborish_kerak = False
+    svodka_turi_nomi = "24 soatlik Kunlik Svodka"
+    saqlash_kaliti = None
+
+    if majburiy:
+        yuborish_kerak = True
+        svodka_turi_nomi = f"Tezkor Svodka ({uz_now.strftime('%d.%m.%Y %H:%M')})"
+    else:
+        if "12:00" in rejim and soat >= 12 and soz.get("oxirgi_svodka_12", "") != bugun_str:
+            yuborish_kerak = True
+            svodka_turi_nomi = f"Sutkalik Svodka (12:00 -> 12:00 | {bugun_str})"
+            saqlash_kaliti = "oxirgi_svodka_12"
+        elif "00:00" in rejim and soat < 12 and soz.get("oxirgi_svodka_00", "") != bugun_str:
+            yuborish_kerak = True
+            svodka_turi_nomi = f"Tungi 00:00 Svodka ({kecha_str} yakuni)"
+            saqlash_kaliti = "oxirgi_svodka_00"
+
+    if not yuborish_kerak:
+        return False
+
+    df_b = db.read_df("SELECT * FROM bronlar")
+    df_t = db.read_df("SELECT * FROM tolovlar_tarixi WHERE sana >= ?", (kecha_str,))
+    df_s = db.read_df("SELECT * FROM savdolar WHERE sana >= ?", (kecha_str,))
+    df_x = db.read_df("SELECT * FROM xarajatlar WHERE sana >= ?", (kecha_str,))
+    toz_map = barcha_xona_tozalik_ol()
+
+    if not df_b.empty:
+        df_b['odam_soni'] = df_b['odam_soni'].fillna(1).astype(int)
+        df_b['qoldiq'] = df_b['qoldiq'].fillna(0)
+        faol_m = df_b[(df_b['holat'] != 'Chiqib ketgan') & (df_b['kirish_sanasi'] <= bugun_str) & (df_b['chiqish_sanasi'] >= bugun_str)]
+        band_x_soni = len(set(faol_m['xona'].unique()))
+        faol_odam_soni = int(faol_m['odam_soni'].sum())
+
+        kirgan_df = df_b[df_b['kirish_sanasi'].isin([kecha_str, bugun_str]) & (df_b['holat'] != 'Chiqib ketgan')]
+        kirgan_odam = int(kirgan_df['odam_soni'].sum())
+        kirgan_bron = len(kirgan_df)
+
+        chiqqan_df = df_b[(df_b['chiqish_sanasi'].isin([kecha_str, bugun_str])) & (df_b['holat'] == 'Chiqib ketgan')]
+        chiqqan_odam = int(chiqqan_df['odam_soni'].sum())
+        chiqqan_bron = len(chiqqan_df)
+
+        umumiy_qarz = float(df_b[(df_b['qoldiq'] > 0) & (df_b['holat'] != 'Chiqib ketgan')]['qoldiq'].sum())
+    else:
+        band_x_soni, faol_odam_soni, kirgan_odam, kirgan_bron, chiqqan_odam, chiqqan_bron, umumiy_qarz = 0, 0, 0, 0, 0, 0, 0.0
+
+    tozalash_kk = sum(1 for h in toz_map.values() if h == "Tozalash kerak")
+    bosh_x_soni = max(0, 36 - band_x_soni)
+
+    yotoq_kirim = float(df_t[df_t['manba'] != 'Market Savdo']['summa'].fillna(0).sum()) if not df_t.empty else 0.0
+    market_kirim = float(df_t[df_t['manba'] == 'Market Savdo']['summa'].fillna(0).sum()) if not df_t.empty else 0.0
+    xarajat_sum = float(df_x['summa'].fillna(0).sum()) if not df_x.empty else 0.0
+    sof_kassa = (yotoq_kirim + market_kirim) - xarajat_sum
+
+    # 1. MEHMONXONA EGASI UCHUN (Faqat mijozlar va yotoq hisoboti)
+    owner_matn = (
+        f"🛏 <b>Hozir band xonalar:</b> {band_x_soni} / 36 ta ({faol_odam_soni} nafar mehmon)\n"
+        f"🟢 <b>Bo'sh xonalar:</b> {bosh_x_soni} ta\n"
+        f"📥 <b>Kirdi (24 soatda):</b> {kirgan_odam} kishi ({kirgan_bron} ta bron)\n"
+        f"🛫 <b>Chiqib ketdi:</b> {chiqqan_odam} kishi ({chiqqan_bron} ta bron)\n"
+        f"💰 <b>Yotoq bo'yicha tushum:</b> {yotoq_kirim:,.0f} UZS\n"
+        f"⚠️ <b>Mehmonlardagi joriy qarzlar:</b> {umumiy_qarz:,.0f} UZS"
+    )
+
+    # 2. CEO UCHUN (To'liq moliyaviy, market, sklad va mijozlar hisoboti)
+    kam_tovarlar_soni = db.fetchone("SELECT COUNT(*) FROM mahsulotlar WHERE qoldiq <= 5")[0] or 0
+    ceo_matn = (
+        f"{owner_matn}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🛒 <b>Market tushumi:</b> {market_kirim:,.0f} UZS ({len(df_s)} ta savdo)\n"
+        f"➖ <b>Xarajatlar:</b> {xarajat_sum:,.0f} UZS\n"
+        f"🏦 <b>Sof Kassa Balansi:</b> {sof_kassa:,.0f} UZS\n"
+        f"🧹 <b>Tozalash kerak bo'lgan xonalar:</b> {tozalash_kk} ta\n"
+        f"📦 <b>Skladda kam qolgan tovarlar:</b> {kam_tovarlar_soni} xil"
+    )
+
+    token = soz.get("tg_token", "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE")
+    owner_id = soz.get("owner_chat_id", "").strip()
+    ceo_id = soz.get("ceo_chat_id", "6483211079").strip()
+
+    tg_xabar_yubor(svodka_turi_nomi, ceo_matn, xodim_ismi)
+    if owner_id and owner_id != ceo_id:
+        uz_v = uz_now.strftime("%d.%m.%Y | %H:%M")
+        owner_full = (
+            f"📊 <b>{svodka_turi_nomi}</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"{owner_matn}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕒 <b>Vaqt:</b> {uz_v}"
+        )
+        _tg_direct_send(token, owner_id, owner_full)
+
+    if saqlash_kaliti:
+        sozlamani_saqla(saqlash_kaliti, bugun_str)
+    return True
+
+# =========================================================
+# DINAMIK TARIF KALKULYATORI
+# =========================================================
 def dinamik_narx_hisobla(tomon, xona, toifa, odam_soni, kunlar, toliq_xona=False, maxsus_chegirma_foiz=0):
     soz = sozlamalarni_ol()
     sigim = XONALAR[tomon][xona][0]
@@ -219,7 +383,6 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #ffffff !important;
         }
 
-        /* BARCHA KONTEYNERLAR, FORMALAR VA EXPANDERLAR TO'LIQ QORA FONDA BO'LISHI UCHUN */
         .stForm,
         div[data-testid="stForm"],
         div[data-testid="stExpander"],
@@ -230,7 +393,6 @@ def mukammal_ui_ux_sozla(tema_nomi):
             padding: 16px !important;
         }
 
-        /* 1-SKRINSHOT TUZATISHI: HTML5 <dialog> VA MODAL OYNA PORTALINING BARCHA ELEMENTLARINI QORAYTIRISH */
         dialog,
         dialog[data-testid="stDialog"],
         dialog[open],
@@ -270,7 +432,6 @@ def mukammal_ui_ux_sozla(tema_nomi):
             border-radius: 8px !important;
         }
 
-        /* 2-SKRINSHOT TUZATISHI: INPUT MATNI TO'Q QORA, PLACEHOLDER ESA XIRA KULRANG BO'LISHI UCHUN */
         .stApp input,
         dialog input,
         div[role="dialog"] input,
@@ -462,6 +623,8 @@ if not st.session_state.logged_in:
                     st.session_state.xodim_ismi = user[1] if user[1] else user[2].upper()
                     st.session_state.user_login = user[2]
                     st.query_params["user"] = user[2]
+                    if user[0] == "housekeeping":
+                        st.session_state.faol_sahifa = "🧹 Xona tozalash"
                     st.query_params["page"] = st.session_state.faol_sahifa
                     jurnalga_yozish("Tizim", st.session_state.xodim_ismi, "Tizimga kirdi", "Ish faoliyati boshlandi")
                     st.rerun()
@@ -470,12 +633,13 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==========================================
-# HAR SAFAR AVTO-CHECKOUTNI TEKSHIRISH (12:00)
+# HAR SAFAR AVTO-CHECKOUT VA 24 SOATLIK AVTO-SVODKANI TEKSHIRISH
 # ==========================================
 avto_checkout_tekshir()
+kunlik_svodka_shakllantir_va_yubor()
 
 # ==========================================
-# 2. ZAMONAVIY MENYU BAR
+# 2. ZAMONAVIY MENYU BAR (CEO, ADMIN VA TOZALIK XODIMASI ROLLARI BILAN)
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
@@ -483,7 +647,8 @@ bugungi_sana = hozirgi_uz_vaqt.strftime("%Y-%m-%d")
 hozirgi_soat = hozirgi_uz_vaqt.hour
 
 st.sidebar.title("🏨 Y.S.H. ERP")
-st.sidebar.markdown(f"<div style='font-size:14px; font-weight:700; margin-bottom:10px;'>👤 {xodim_ismi} ({st.session_state.role.upper()})</div>", unsafe_allow_html=True)
+rol_nomi_korsat = "TOZALIK / XO'JALIK" if st.session_state.role == "housekeeping" else st.session_state.role.upper()
+st.sidebar.markdown(f"<div style='font-size:14px; font-weight:700; margin-bottom:10px;'>👤 {xodim_ismi} ({rol_nomi_korsat})</div>", unsafe_allow_html=True)
 
 tanlangan_tema = st.sidebar.selectbox(
     "🎨 Interfeys temasi:",
@@ -513,6 +678,12 @@ if st.session_state.role == "ceo":
         "👑 CEO va Hisobotlar",
         "⚙️ Sozlamalar"
     ]
+elif st.session_state.role == "housekeeping":
+    menyu_variantlar = [
+        "🧹 Xona tozalash",
+        "📅 Timeline & Shaxmatka",
+        "⚙️ Sozlamalar"
+    ]
 else:
     menyu_variantlar = [
         "🏠 Boshqaruv paneli",
@@ -530,7 +701,7 @@ url_page = st.query_params.get("page", "")
 if url_page in menyu_variantlar:
     st.session_state.faol_sahifa = url_page
 elif st.session_state.faol_sahifa not in menyu_variantlar:
-    st.session_state.faol_sahifa = "🏠 Boshqaruv paneli"
+    st.session_state.faol_sahifa = menyu_variantlar[0]
 
 for m_item in menyu_variantlar:
     is_active = (st.session_state.faol_sahifa == m_item)
@@ -546,19 +717,23 @@ for m_item in menyu_variantlar:
 
 sahifa = st.session_state.faol_sahifa
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("##### 🔍 Global CRM Davr Filtri")
-g_bosh_sana, g_tugash_sana, g_davr_nomi = aqlli_sana_filtri_ui(joylashuv="sidebar", key_prefix="global")
-st.sidebar.markdown(f"<div style='font-size:13px; font-weight:600; margin-top:4px;'>📌 Faol davr: <b>{g_davr_nomi}</b></div>", unsafe_allow_html=True)
+if st.session_state.role != "housekeeping":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("##### 🔍 Global CRM Davr Filtri")
+    g_bosh_sana, g_tugash_sana, g_davr_nomi = aqlli_sana_filtri_ui(joylashuv="sidebar", key_prefix="global")
+    st.sidebar.markdown(f"<div style='font-size:13px; font-weight:600; margin-top:4px;'>📌 Faol davr: <b>{g_davr_nomi}</b></div>", unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-st.sidebar.download_button(
-    label="💾 Barcha bazani yuklash (Excel)",
-    data=barcha_bazani_yuklash(),
-    file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True
-)
+    st.sidebar.markdown("---")
+    st.sidebar.download_button(
+        label="💾 Barcha bazani yuklash (Excel)",
+        data=barcha_bazani_yuklash(),
+        file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+else:
+    g_bosh_sana, g_tugash_sana, g_davr_nomi = None, None, "Bugungi"
+
 st.sidebar.write("")
 if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     jurnalga_yozish("Tizim", xodim_ismi, "Tizimdan chiqdi", "Ish faoliyati yakunlandi")
@@ -566,6 +741,105 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     st.session_state.role = None
     st.query_params.clear()
     st.rerun()
+
+# =========================================================
+# VIZUAL XONALAR VA KROVATLAR XARITASI (ADMIN VA TOZALIK BEKALARI UCHUN)
+# =========================================================
+def render_vizual_krovatlar_xaritasi(qidir_x=""):
+    st.markdown("##### 🗺️ Xonalar va Krovatlar (Yotoq o'rinlari) Jonli Xaritasi")
+    st.caption("Har bir xonada nechta joy band, qaysi krovatlar bo'sh, xonada erkaklar yoki ayollar yotgani va bugun 12:00 da qaysi joy bo'shashi aniq ko'rsatilgan.")
+
+    qanot_filtr = st.radio("Sektorni tanlang:", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True, key="xarita_qanot_f")
+    tozalik_map = barcha_xona_tozalik_ol()
+    df_faol_b = db.read_df("SELECT * FROM bronlar WHERE holat != 'Chiqib ketgan' ORDER BY id DESC")
+
+    for tomon, xonalar in XONALAR.items():
+        if qanot_filtr != "Barchasi" and tomon != qanot_filtr:
+            continue
+        st.markdown(f"###### 📍 {tomon.upper()} ({len(xonalar)} ta xona)")
+        cols_x = st.columns(3, gap="medium")
+        col_i = 0
+        for x_nom, (sigim, _) in xonalar.items():
+            if qidir_x and qidir_x.lower() not in x_nom.lower():
+                continue
+
+            if not df_faol_b.empty:
+                x_m_mask = df_faol_b.apply(lambda r: r['xona'] == x_nom and bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], bugungi_sana), axis=1)
+                x_mehmonlar = df_faol_b[x_m_mask]
+            else:
+                x_mehmonlar = pd.DataFrame()
+
+            toza_hol = tozalik_map.get(x_nom, "Toza")
+            band_odam = 0
+            x_jins = ""
+            vikup_bor = False
+            krovat_egalari = {}
+            ketuvchilar = []
+
+            if not x_mehmonlar.empty:
+                for _, mr in x_mehmonlar.iterrows():
+                    o_s = int(mr.get('odam_soni', 1) or 1)
+                    band_odam += o_s
+                    if not x_jins and mr.get('jinsi'):
+                        x_jins = mr.get('jinsi')
+                    birikma = f"{mr.get('xona_turi', '')} {mr.get('izoh', '')}"
+                    if "To'liq band" in birikma or "Barcha joylar" in birikma or tomon == "O'rtadagi":
+                        vikup_bor = True
+                        for j_k in range(1, sigim + 1):
+                            krovat_egalari[j_k] = f"{mr['mijoz']}"
+                    else:
+                        topildi = re.findall(r'(\d)-joy', birikma)
+                        for j_raq in topildi:
+                            krovat_egalari[int(j_raq)] = f"{mr['mijoz']}"
+                    if str(mr.get('chiqish_sanasi', '')) == bugungi_sana:
+                        ketuvchilar.append(f"{mr['mijoz']} ({o_s}k)")
+
+            bosh_joy = 0 if vikup_bor else max(0, sigim - band_odam)
+
+            if toza_hol == "Tozalash kerak":
+                border_c = "#ef4444"
+                hol_badge = "🔴 Tozalash kerak"
+            elif bosh_joy == 0:
+                border_c = "#8b5cf6"
+                hol_badge = "🟣 To'liq band"
+            elif band_odam > 0:
+                border_c = "#f59e0b"
+                hol_badge = f"🟡 {bosh_joy} ta bo'sh joy bor"
+            else:
+                border_c = "#22c55e"
+                hol_badge = "🟢 To'liq bo'sh (Toza)"
+
+            jins_badge = f" • {'👨 Erkaklar' if x_jins == 'Erkak' else '👩 Ayollar'}" if x_jins else ""
+            tur_matn = "Lyuks (Dvuxspalniy)" if tomon == "O'rtadagi" else f"{sigim} kishilik"
+
+            krovat_html = ""
+            if tomon == "O'rtadagi":
+                if band_odam > 0:
+                    m_nom_l = ", ".join(x_mehmonlar['mijoz'].tolist())
+                    krovat_html = f"<div style='padding:4px 8px; background:rgba(139,92,246,0.2); border-radius:6px; margin-top:4px; font-size:12px;'>🛌 <b>Dvuxspalniy:</b> {m_nom_l} ({band_odam} kishi)</div>"
+                else:
+                    krovat_html = "<div style='padding:4px 8px; background:rgba(34,197,94,0.12); border-radius:6px; margin-top:4px; font-size:12px;'>🟢 <b>Dvuxspalniy:</b> Bo'sh</div>"
+            else:
+                for k_i in range(1, sigim + 1):
+                    if k_i in krovat_egalari:
+                        krovat_html += f"<div style='padding:3px 8px; background:rgba(239,68,68,0.18); border-radius:6px; margin-top:3px; font-size:12px;'>🔴 <b>{k_i}-joy:</b> Band ({krovat_egalari[k_i]})</div>"
+                    else:
+                        krovat_html += f"<div style='padding:3px 8px; background:rgba(34,197,94,0.14); border-radius:6px; margin-top:3px; font-size:12px;'>🟢 <b>{k_i}-joy:</b> BO'SH</div>"
+
+            ketish_html = f"<div style='margin-top:6px; padding:4px 8px; background:rgba(234,179,8,0.2); border-radius:6px; font-size:11.5px; color:#fde047;'>⏳ <b>Bugun 12:00 da chiqadi:</b> {', '.join(ketuvchilar)}</div>" if ketuvchilar else ""
+            bg_c = "#151928" if is_dark else "#ffffff"
+
+            with cols_x[col_i % 3]:
+                st.markdown(
+                    f"<div style='background:{bg_c}; border:2px solid {border_c}; border-radius:12px; padding:12px; margin-bottom:12px;'>"
+                    f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
+                    f"<span style='font-size:15px; font-weight:800;'>🛏️ {x_nom}</span>"
+                    f"<span style='font-size:12px; font-weight:700;'>{hol_badge}</span></div>"
+                    f"<div style='font-size:12px; opacity:0.8; margin:3px 0 6px 0;'>{tur_matn}{jins_badge} • Bo'sh joy: <b>{bosh_joy}/{sigim}</b></div>"
+                    f"{krovat_html}{ketish_html}</div>",
+                    unsafe_allow_html=True
+                )
+            col_i += 1
 
 # =========================================================
 # YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
@@ -807,7 +1081,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                     
                     tel_qator = f"📞 <b>Telefon:</b> {mijoz_tel.strip()}\n" if mijoz_tel.strip() else ""
                     cheg_qator = f"🏷️ <b>Chegirma:</b> -{int(amaldagi_cheg_foiz)}%\n" if amaldagi_cheg_foiz > 0 else ""
-                    tg_xabar_yubor(
+                    aqlli_tg_xabar(
                         f"Yangi {saq_turi}",
                         f"👤 <b>Mijoz:</b> {mijoz_ism} ({odam_soni} kishi | {jinsi} | {toifa})\n"
                         f"{tel_qator}"
@@ -817,7 +1091,7 @@ def render_qabul_formasi(form_key_suffix="main"):
                         f"💰 <b>Jami hisob:</b> {yakuniy_narx:,.0f} UZS\n"
                         f"✅ <b>To'ladi:</b> {tolangan:,.0f} UZS ({t_taf})\n"
                         f"⚠️ <b>Qoldiq qarz:</b> {max(0, qoldiq):,.0f} UZS",
-                        xodim_ismi, muhim=maxsus_belgi
+                        xodim_ismi, turi="mijoz", muhim=maxsus_belgi
                     )
                     st.success(f"✅ Mehmon ({mijoz_ism} — {odam_soni} kishi) {xona} ({krovat_yorliq}) ga joylashtirildi! Chiqish: {chiqish_str} {hisob_soat_str} | Jami: {yakuniy_narx:,.0f} UZS")
                     st.rerun()
@@ -838,7 +1112,14 @@ if sahifa == "🏠 Boshqaruv paneli":
     oy_nomlari_uz = ["", "yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"]
     bugun_matn = f"Bugun, {hozirgi_uz_vaqt.day}-{oy_nomlari_uz[hozirgi_uz_vaqt.month]}, {hafta_kunlari_uz[hozirgi_uz_vaqt.weekday()]}"
 
-    st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='margin-top: 4px; margin-bottom: 18px;'>{bugun_matn} &nbsp;|&nbsp; Hisobot davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
+    d_top1, d_top2 = st.columns([3.2, 1.3], gap="medium")
+    with d_top1:
+        st.markdown(f"<h2 style='margin-bottom: 0px;'>Boshqaruv paneli</h2><p style='margin-top: 4px; margin-bottom: 18px;'>{bugun_matn} &nbsp;|&nbsp; Hisobot davri: <b>{g_davr_nomi}</b></p>", unsafe_allow_html=True)
+    with d_top2:
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        if st.button("📲 24 soatlik Svodkani Telegramga yuborish", use_container_width=True):
+            kunlik_svodka_shakllantir_va_yubor(xodim_ismi, majburiy=True)
+            st.success("✅ Svodka CEO va Egaga yuborildi!")
 
     df_barcha = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
     df_savdolar = db.read_df("SELECT * FROM savdolar ORDER BY id DESC")
@@ -949,6 +1230,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                         db.execute("UPDATE bronlar SET holat='Chiqib ketgan' WHERE mijoz_id=?", (ch_row['mijoz_id'],))
                         xona_tozalik_ozgartir(ch_row['xona'], "Tozalash kerak")
                         jurnalga_yozish(ch_row['mijoz_id'], xodim_ismi, "Checkout", f"{ch_row['mijoz']} ({ch_row['xona']}) chiqib ketdi")
+                        aqlli_tg_xabar("Checkout (Mehmon chiqib ketdi)", f"👤 <b>Mijoz:</b> {ch_row['mijoz']} ({ch_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {ch_row['xona']}", xodim_ismi, turi="mijoz")
                         st.rerun()
                 else:
                     cc2.markdown("<div style='text-align:center; padding:6px; background:rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; font-weight:700;'>⚠️ Qarzdor</div>", unsafe_allow_html=True)
@@ -968,6 +1250,7 @@ if sahifa == "🏠 Boshqaruv paneli":
                     if ck2.button("🔑 Check-in", key=f"dash_in_{k_row['mijoz_id']}", use_container_width=True):
                         db.execute("UPDATE bronlar SET bron_turi='Hozir kirish' WHERE mijoz_id=?", (k_row['mijoz_id'],))
                         jurnalga_yozish(k_row['mijoz_id'], xodim_ismi, "Check-in (Keldi)", f"Bron qilingan {k_row['mijoz']} ({k_row['xona']}) kelib joylashdi")
+                        aqlli_tg_xabar("Bron Check-in (Mehmon keldi)", f"👤 <b>Mijoz:</b> {k_row['mijoz']} ({k_row['odam_soni']} kishi)\n🛏 <b>Xona:</b> {k_row['xona']}{joy_b}", xodim_ismi, turi="mijoz")
                         st.rerun()
                 else:
                     st.markdown(
@@ -1107,19 +1390,19 @@ elif sahifa == "📅 Timeline & Shaxmatka":
         st.markdown("<h2 style='margin: 0; padding-top: 4px;'>📅 Timeline va Xonalar Shaxmatkasi</h2>", unsafe_allow_html=True)
     with tl_col2:
         st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-        if hasattr(st, "dialog"):
+        if hasattr(st, "dialog") and st.session_state.role != "housekeeping":
             if st.button("➕ Yangi bron qo'shish", type="primary", use_container_width=True):
                 yangi_bron_modal()
 
     st.write("")
     with st.container(border=True):
-        f_col1, f_col2, f_col3, f_col4 = st.columns([2, 1.3, 1.7, 1.1], gap="medium")
+        f_col1, f_col2, f_col3, f_col4 = st.columns([1.8, 1.2, 2.0, 1.1], gap="medium")
         with f_col1:
             tanlangan_katalog = st.radio("📍 Binoning qanoti (Sektor):", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True)
         with f_col2:
             kun_soni_tl = st.radio("🗓️ Davr ko'lami:", [7, 14, 30], index=1, horizontal=True, format_func=lambda x: f"{x} kun")
         with f_col3:
-            rejim_tl = st.radio("🖥️ Ko'rinish rejimi:", ["📊 Vizual Timeline", "🔲 Jadval Shaxmatka"], horizontal=True)
+            rejim_tl = st.radio("🖥️ Ko'rinish rejimi:", ["📊 Vizual Timeline", "🔲 Jadval Shaxmatka", "🗺️ Jonli Krovatlar Xaritasi"], horizontal=True)
         with f_col4:
             bosh_sana = st.date_input("📅 Boshlanish sanasi:", toshkent_vaqti().date() - timedelta(days=1))
             arxiv_korsat_tl = st.checkbox("⚪ Arxivni ko'rsatish", value=False)
@@ -1131,7 +1414,9 @@ elif sahifa == "📅 Timeline & Shaxmatka":
     tozalik_map = barcha_xona_tozalik_ol()
     kun_nom_qisqa = ["DU", "SE", "CH", "PA", "JU", "SH", "YA"]
 
-    if rejim_tl == "📊 Vizual Timeline":
+    if rejim_tl == "🗺️ Jonli Krovatlar Xaritasi":
+        render_vizual_krovatlar_xaritasi()
+    elif rejim_tl == "📊 Vizual Timeline":
         st.markdown(
             "<div style='display:flex; gap:18px; font-size:13px; margin: 10px 0; flex-wrap:wrap;'>"
             "<span>🟢 <b>Joylashgan (To'langan)</b></span>"
@@ -1645,7 +1930,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                    (bugungi_sana, q_id, q_mijoz_ism, "Qarz yopish", tolov_sum, t_shakl, t_tafsiloti, xodim_ismi))
                         jurnalga_yozish(q_id, xodim_ismi, "Qarz yopildi", f"Summa: {tolov_sum:,.0f} ({t_tafsiloti})")
-                        tg_xabar_yubor("Mehmon qarzi to'landi", f"👤 <b>Mijoz:</b> {q_mijoz_ism}\n💵 <b>To'landi:</b> {tolov_sum:,.0f} UZS ({t_tafsiloti})", xodim_ismi)
+                        aqlli_tg_xabar("Mehmon qarzi to'landi", f"👤 <b>Mijoz:</b> {q_mijoz_ism}\n💵 <b>To'landi:</b> {tolov_sum:,.0f} UZS ({t_tafsiloti})", xodim_ismi, turi="mijoz")
                         st.success("To'lov muvaffaqiyatli qabul qilindi!")
                         st.rerun()
             else:
@@ -1687,7 +1972,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             yangi_holat = "To'langan" if yangi_qoldiq <= 0 else "Qarzdorlik"
                             db.execute("UPDATE bronlar SET kunlar=kunlar+?, qoldiq=?, jami_summa=jami_summa+?, faktik_narx=faktik_narx+?, chiqish_sanasi=?, holat=? WHERE mijoz_id=?", (qoshimcha_kun, yangi_qoldiq, q_sum, q_sum, yangi_chiqish_str, yangi_holat, m_id))
                             jurnalga_yozish(m_id, xodim_ismi, "Muddat cho'zildi", f"+{qoshimcha_kun} sutka ({q_sum:,.0f} UZS)")
-                            tg_xabar_yubor("Muddat cho'zildi", f"👤 <b>Mijoz:</b> {mijoz_data['mijoz']}\n➕ <b>Qo'shildi:</b> +{qoshimcha_kun} sutka ({q_sum:,.0f} UZS)\n🛫 <b>Yangi chiqish:</b> {yangi_chiqish_str} 12:00", xodim_ismi, muhim=(chozish_chegirma > 0))
+                            aqlli_tg_xabar("Muddat cho'zildi", f"👤 <b>Mijoz:</b> {mijoz_data['mijoz']}\n➕ <b>Qo'shildi:</b> +{qoshimcha_kun} sutka ({q_sum:,.0f} UZS)\n🛫 <b>Yangi chiqish:</b> {yangi_chiqish_str} 12:00", xodim_ismi, turi="mijoz", muhim=(chozish_chegirma > 0))
                             st.success("Yashash muddati muvaffaqiyatli uzaytirildi!")
                             st.rerun()
             else:
@@ -1735,7 +2020,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                             db.execute("UPDATE bronlar SET tomon=?, xona=?, xona_turi=?, izoh=? WHERE mijoz_id=?", (y_tomon, y_xona, y_xona_turi, yangi_iz_koch, k_id))
                             xona_tozalik_ozgartir(eski_xona, "Tozalash kerak")
                             jurnalga_yozish(k_id, xodim_ismi, "Xona ko'chirildi", f"{k_data['mijoz']}: {eski_xona} -> {y_xona} ({y_xona_turi})")
-                            tg_xabar_yubor("Xona almashtirildi", f"👤 <b>Mijoz:</b> {k_data['mijoz']}\n🔄 <b>Ko'chirildi:</b> {eski_xona} ➡️ {y_xona} ({y_xona_turi})", xodim_ismi)
+                            aqlli_tg_xabar("Xona almashtirildi", f"👤 <b>Mijoz:</b> {k_data['mijoz']}\n🔄 <b>Ko'chirildi:</b> {eski_xona} ➡️ {y_xona} ({y_xona_turi})", xodim_ismi, turi="mijoz")
                             st.success(f"Mehmon {y_xona} ga ko'chirildi! ({eski_xona} tozalash ro'yxatiga o'tkazildi)")
                             st.rerun()
             else:
@@ -1776,20 +2061,20 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                     (bugungi_sana, c_id, c_row['mijoz'], "Vozvrat (Pul qaytarish)", -vozvrat_sum, vozvrat_kassa, vozvrat_kassa, xodim_ismi)
                                 )
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout + Vozvrat", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni bo'shatdi. Qaytarildi: -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})")
-                                tg_xabar_yubor(
+                                aqlli_tg_xabar(
                                     "Checkout va Pul qaytarish (Vozvrat)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n"
                                     f"🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)\n"
                                     f"⏪ <b>Qaytarilgan summa (Vozvrat):</b> -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})\n"
                                     f"💰 <b>Qolgan sof to'lov:</b> {yangi_tolagan:,.0f} UZS",
-                                    xodim_ismi, muhim=True
+                                    xodim_ismi, turi="mijoz", muhim=True
                                 )
                             else:
                                 jurnalga_yozish(c_id, xodim_ismi, "Checkout", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni topshirdi va arxivga o'tkazildi")
-                                tg_xabar_yubor(
+                                aqlli_tg_xabar(
                                     "Checkout (Mijoz chiqib ketdi)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)",
-                                    xodim_ismi
+                                    xodim_ismi, turi="mijoz"
                                 )
                             st.success(f"✅ {c_row['mijoz']} ({c_row['xona']}) chiqarildi va xona «🧹 Tozalash kerak» ro'yxatiga o'tkazildi!")
                             st.rerun()
@@ -1883,96 +2168,104 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                        (bugungi_sana, t_id, y_ism.strip(), "Tahrirlash (Kassa tuzatish)", farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
 
                         jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism} ({y_odam} kishi), Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq} -> Chiqish: {y_chiqish_str}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
-                        tg_xabar_yubor(
+                        aqlli_tg_xabar(
                             "Mijoz ma'lumotlari tahrirlandi",
                             f"🆔 <b>ID:</b> {t_id}\n"
                             f"👤 <b>Mijoz:</b> {y_ism} ({y_odam} kishi | {y_xona} — {y_xona_turi})\n"
                             f"🕒 <b>Kirish:</b> {y_sana_vaqt_toliq} ➡️ <b>Chiqish:</b> {y_chiqish_str} 12:00 ({y_kunlar} sutka)\n"
                             f"💰 <b>Yangi jami:</b> {y_faktik:,.0f} UZS | <b>To'lagan:</b> {y_tolagan:,.0f} UZS | <b>Qoldiq:</b> {max(0, y_qoldiq):,.0f} UZS",
-                            xodim_ismi, muhim=True
+                            xodim_ismi, turi="mijoz", muhim=True
                         )
                         st.success("✅ Mehmon ma'lumotlari va kassa balansi muvaffaqiyatli yangilandi!")
                         st.rerun()
 
 # ====================================================
-# SAHIFA 5: 🧹 XONA TOZALASH
+# SAHIFA 5: 🧹 XONA TOZALASH (VIZUAL XARITA BILAN!)
 # ====================================================
 elif sahifa == "🧹 Xona tozalash":
-    st.header("🧹 Xona tozalash va Sanitar nazorat (Housekeeping)")
-    st.caption("👆 Xonalarni tanlab «Toza» yoki «Tozalash kerak» holatiga o'tkazing. Mehmon chiqib ketgan xona avtomatik ravishda «Tozalash kerak» blokiga tushadi.")
-
+    st.header("🧹 Xona tozalash va Krovatlar Joylashuvi (Housekeeping)")
+    rejim_toza = st.radio(
+        "Ko'rinishni tanlang:",
+        ["🧹 Tozalik holatini boshqarish (Tezkor tugmalar)", "🗺️ Xonalar va Krovatlar (Yotoq o'rinlari) Xaritasi"],
+        horizontal=True
+    )
     qidir_x = st.text_input("🔍 Xona raqami bo'yicha qidirish:", placeholder="Masalan: 15-xona...")
-    tozalik_map = barcha_xona_tozalik_ol()
-    df_barcha_x = db.read_df("SELECT xona, kirish_sanasi, chiqish_sanasi, holat FROM bronlar WHERE holat!='Chiqib ketgan'")
-    if not df_barcha_x.empty:
-        faol_x_mask = df_barcha_x.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], bugungi_sana), axis=1)
-        band_xonalar_set = set(df_barcha_x[faol_x_mask]['xona'].unique())
+
+    if rejim_toza == "🗺️ Xonalar va Krovatlar (Yotoq o'rinlari) Xaritasi":
+        render_vizual_krovatlar_xaritasi(qidir_x)
     else:
-        band_xonalar_set = set()
+        st.caption("👆 Xonalarni tanlab «Toza» yoki «Tozalash kerak» holatiga o'tkazing. Mehmon chiqib ketgan xona avtomatik ravishda «Tozalash kerak» blokiga tushadi.")
+        tozalik_map = barcha_xona_tozalik_ol()
+        df_barcha_x = db.read_df("SELECT xona, kirish_sanasi, chiqish_sanasi, holat FROM bronlar WHERE holat!='Chiqib ketgan'")
+        if not df_barcha_x.empty:
+            faol_x_mask = df_barcha_x.apply(lambda r: bron_shu_kunda_faolmi(r['kirish_sanasi'], r['chiqish_sanasi'], r['holat'], bugungi_sana), axis=1)
+            band_xonalar_set = set(df_barcha_x[faol_x_mask]['xona'].unique())
+        else:
+            band_xonalar_set = set()
 
-    tozalash_kerak_list, bosh_toza_list, band_list = [], [], []
+        tozalash_kerak_list, bosh_toza_list, band_list = [], [], []
 
-    for tomon, xonalar in XONALAR.items():
-        for x_nom, (sigim, _) in xonalar.items():
-            if qidir_x and qidir_x.lower() not in x_nom.lower():
-                continue
-            tur_nom = "Luxe" if tomon == "O'rtadagi" else f"Standart ({sigim} k)"
-            hol = tozalik_map.get(x_nom, "Toza")
-            if hol == "Tozalash kerak":
-                tozalash_kerak_list.append((x_nom, tur_nom))
-            elif x_nom in band_xonalar_set:
-                band_list.append((x_nom, tur_nom))
-            else:
-                bosh_toza_list.append((x_nom, tur_nom))
+        for tomon, xonalar in XONALAR.items():
+            for x_nom, (sigim, _) in xonalar.items():
+                if qidir_x and qidir_x.lower() not in x_nom.lower():
+                    continue
+                tur_nom = "Luxe" if tomon == "O'rtadagi" else f"Standart ({sigim} k)"
+                hol = tozalik_map.get(x_nom, "Toza")
+                if hol == "Tozalash kerak":
+                    tozalash_kerak_list.append((x_nom, tur_nom))
+                elif x_nom in band_xonalar_set:
+                    band_list.append((x_nom, tur_nom))
+                else:
+                    bosh_toza_list.append((x_nom, tur_nom))
 
-    with st.container(border=True):
-        th1, th2 = st.columns([4, 1.3])
-        th1.markdown(f"##### 🔴 Tozalash talab etiladigan xonalar `{len(tozalash_kerak_list)}`")
-        if tozalash_kerak_list:
-            if th2.button("✔️ Barchasini tozalangan deb belgilash", use_container_width=True):
-                for x_n, _ in tozalash_kerak_list:
-                    xona_tozalik_ozgartir(x_n, "Toza")
-                jurnalga_yozish("Housekeeping", xodim_ismi, "Xonalar tozalandi", f"Jami {len(tozalash_kerak_list)} ta xona toza deb belgilandi")
-                st.rerun()
-
-            cols_tk = st.columns(6, gap="small")
-            for idx, (x_n, t_n) in enumerate(tozalash_kerak_list):
-                with cols_tk[idx % 6]:
-                    st.markdown(f"<div style='border:2px solid #ef4444; background:rgba(239,68,68,0.12); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
-                    if st.button("✨ Tozalandi", key=f"clean_{x_n}", use_container_width=True):
+        with st.container(border=True):
+            th1, th2 = st.columns([4, 1.3])
+            th1.markdown(f"##### 🔴 Tozalash talab etiladigan xonalar `{len(tozalash_kerak_list)}`")
+            if tozalash_kerak_list:
+                if th2.button("✔️ Barchasini tozalangan deb belgilash", use_container_width=True):
+                    for x_n, _ in tozalash_kerak_list:
                         xona_tozalik_ozgartir(x_n, "Toza")
-                        jurnalga_yozish("Housekeeping", xodim_ismi, "Xona tozalandi", f"{x_n} toza holatga o'tkazildi")
-                        st.rerun()
-        else:
-            st.success("🎉 Barcha xonalar toza! Tozalash talab etiladigan xona yo'q.")
+                    jurnalga_yozish("Housekeeping", xodim_ismi, "Xonalar tozalandi", f"Jami {len(tozalash_kerak_list)} ta xona toza deb belgilandi")
+                    st.rerun()
 
-    st.write("")
-    with st.container(border=True):
-        st.markdown(f"##### 🟢 Bo'sh va toza xonalar `{len(bosh_toza_list)}`")
-        if bosh_toza_list:
-            cols_bt = st.columns(6, gap="small")
-            for idx, (x_n, t_n) in enumerate(bosh_toza_list):
-                with cols_bt[idx % 6]:
-                    st.markdown(f"<div style='border:1px solid #334155; background:rgba(34,197,94,0.08); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
-                    if st.button("🧹 Tozalashga berish", key=f"dirty_{x_n}", use_container_width=True):
-                        xona_tozalik_ozgartir(x_n, "Tozalash kerak")
-                        st.rerun()
-        else:
-            st.info("Bo'sh xonalar yo'q.")
+                cols_tk = st.columns(6, gap="small")
+                for idx, (x_n, t_n) in enumerate(tozalash_kerak_list):
+                    with cols_tk[idx % 6]:
+                        st.markdown(f"<div style='border:2px solid #ef4444; background:rgba(239,68,68,0.12); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
+                        if st.button("✨ Tozalandi", key=f"clean_{x_n}", use_container_width=True):
+                            xona_tozalik_ozgartir(x_n, "Toza")
+                            jurnalga_yozish("Housekeeping", xodim_ismi, "Xona tozalandi", f"{x_n} toza holatga o'tkazildi")
+                            st.rerun()
+            else:
+                st.success("🎉 Barcha xonalar toza! Tozalash talab etiladigan xona yo'q.")
 
-    st.write("")
-    with st.expander(f"🟣 Hozir mehmon yashayotgan band xonalar ({len(band_list)} ta)"):
-        if band_list:
-            cols_bd = st.columns(6, gap="small")
-            for idx, (x_n, t_n) in enumerate(band_list):
-                with cols_bd[idx % 6]:
-                    st.markdown(f"<div style='border:1px solid #7c3aed; background:rgba(124,58,237,0.1); padding:10px; border-radius:10px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:11px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
-                    if st.button("🧹 Tozalashga berish", key=f"dirty_b_{x_n}", use_container_width=True):
-                        xona_tozalik_ozgartir(x_n, "Tozalash kerak")
-                        st.rerun()
+        st.write("")
+        with st.container(border=True):
+            st.markdown(f"##### 🟢 Bo'sh va toza xonalar `{len(bosh_toza_list)}`")
+            if bosh_toza_list:
+                cols_bt = st.columns(6, gap="small")
+                for idx, (x_n, t_n) in enumerate(bosh_toza_list):
+                    with cols_bt[idx % 6]:
+                        st.markdown(f"<div style='border:1px solid #334155; background:rgba(34,197,94,0.08); padding:12px; border-radius:12px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:12px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
+                        if st.button("🧹 Tozalashga berish", key=f"dirty_{x_n}", use_container_width=True):
+                            xona_tozalik_ozgartir(x_n, "Tozalash kerak")
+                            st.rerun()
+            else:
+                st.info("Bo'sh xonalar yo'q.")
+
+        st.write("")
+        with st.expander(f"🟣 Hozir mehmon yashayotgan band xonalar ({len(band_list)} ta)", expanded=True):
+            if band_list:
+                cols_bd = st.columns(6, gap="small")
+                for idx, (x_n, t_n) in enumerate(band_list):
+                    with cols_bd[idx % 6]:
+                        st.markdown(f"<div style='border:1px solid #7c3aed; background:rgba(124,58,237,0.1); padding:10px; border-radius:10px; text-align:center; margin-bottom:6px;'><b>{x_n}</b><br><span style='font-size:11px; opacity:0.8;'>{t_n}</span></div>", unsafe_allow_html=True)
+                        if st.button("🧹 Tozalashga berish", key=f"dirty_b_{x_n}", use_container_width=True):
+                            xona_tozalik_ozgartir(x_n, "Tozalash kerak")
+                            st.rerun()
 
 # ====================================================
-# SAHIFA 6: 🛒 KASSA (POS MARKET)
+# SAHIFA 6: 🛒 KASSA (POS MARKET — TELEGRAM XABARI FAQAT CEO GA BORADI!)
 # ====================================================
 elif sahifa == "🛒 Kassa (POS Market)":
     st.header("🛒 Kassa (POS Mini-Market)")
@@ -2015,6 +2308,7 @@ elif sahifa == "🛒 Kassa (POS Market)":
                         tovar_tannarxi = float(tanlangan_qator.get('tannarx', 0) or 0)
                         jami_sum = miqdor * tovar_narxi
                         sof_foyda_sum = miqdor * (tovar_narxi - tovar_tannarxi)
+                        yangi_qoldiq_t = maks_qoldiq - miqdor
 
                         if m_tafsiloti == "Boshqa" and m_boshqa_izoh.strip():
                             m_tafsiloti = f"Boshqa ({m_boshqa_izoh.strip()})"
@@ -2050,6 +2344,14 @@ elif sahifa == "🛒 Kassa (POS Market)":
                                        (bugungi_sana, "Market", xaridor_nomi, "Market Savdo", jami_sum, "Darhol", m_tafsiloti, xodim_ismi))
                             jurnalga_yozish("Market (Sotuv)", xodim_ismi, "Naqd Savdo", f"{miqdor} ta {tovar_nom_qisqa} sotildi. Summa: {jami_sum:,.0f} UZS ({m_tafsiloti})")
                         
+                        aqlli_tg_xabar(
+                            "Market Savdosi (POS)",
+                            f"🛍 <b>Mahsulot:</b> {tovar_nom_qisqa} ({miqdor} dona)\n"
+                            f"👤 <b>Xaridor:</b> {xaridor_nomi}\n"
+                            f"💵 <b>Summa:</b> {jami_sum:,.0f} UZS ({m_tafsiloti})\n"
+                            f"📦 <b>Skladda qoldi:</b> {yangi_qoldiq_t} dona",
+                            xodim_ismi, turi="moliya"
+                        )
                         st.success(f"✅ {miqdor} ta {tovar_nom_qisqa} ({jami_sum:,.0f} UZS) sotildi!")
                         st.rerun()
 
@@ -2072,7 +2374,7 @@ elif sahifa == "🛒 Kassa (POS Market)":
             st.info(f"Tanlangan davrda ({g_davr_nomi}) savdo amaliyotlari qayd etilmagan.")
 
 # ====================================================
-# SAHIFA 7: 📦 XIZMATLAR VA SKLAD
+# SAHIFA 7: 📦 XIZMATLAR VA SKLAD (TELEGRAM XABARI FAQAT CEO GA BORADI!)
 # ====================================================
 elif sahifa == "📦 Xizmatlar va Sklad":
     st.header("📦 Xizmatlar, Do'kon va Sklad Boshqaruvi")
@@ -2137,6 +2439,14 @@ elif sahifa == "📦 Xizmatlar va Sklad":
                                   (t_nom, kat_nomi, sub_kat_nomi, t_hajm, tov_tannarx, tov_narxi, tov_soni, ""))
                         st.success(f"✅ Yangi {t_nom} ({t_hajm if t_hajm else 'Standart'}) omborga qo'shildi!")
                         jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Yangi tovar keldi", f"{t_nom} ({t_hajm}) {tov_soni} ta kiritildi. Sotuv narxi: {tov_narxi:,.0f} UZS")
+
+                    aqlli_tg_xabar(
+                        "Skladga tovar kirim qilindi",
+                        f"📦 <b>Mahsulot:</b> {t_nom} ({t_hajm or 'Standart'})\n"
+                        f"➕ <b>Kirim soni:</b> +{tov_soni} dona\n"
+                        f"💰 <b>Tannarx / Sotuv:</b> {tov_tannarx:,.0f} / {tov_narxi:,.0f} UZS",
+                        xodim_ismi, turi="moliya"
+                    )
                     st.rerun()
 
     elif ombor_tanlov == "✏️ Tovarni tahrirlash / O'chirish":
@@ -2166,11 +2476,13 @@ elif sahifa == "📦 Xizmatlar va Sklad":
                     db.execute("UPDATE mahsulotlar SET nomi=?, hajmi=?, tannarx=?, narxi=?, qoldiq=?, izoh=? WHERE id=?",
                                (y_m_nomi.strip(), y_m_hajm.strip(), y_m_tannarx, y_m_narx, y_m_qoldiq, y_m_izoh.strip(), m_edit_id))
                     jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Tovar tahrirlandi", f"{y_m_nomi} ({y_m_hajm}): Narx={y_m_narx:,.0f}, Qoldiq={y_m_qoldiq} ta")
+                    aqlli_tg_xabar("Sklad tovari tahrirlandi", f"📦 <b>Tovar:</b> {y_m_nomi} ({y_m_hajm})\n🔢 <b>Yangi qoldiq:</b> {y_m_qoldiq} dona | <b>Narx:</b> {y_m_narx:,.0f} UZS", xodim_ismi, turi="moliya", muhim=True)
                     st.success("✅ Tovar ma'lumotlari yangilandi!")
                     st.rerun()
                 if ochirish_m:
                     db.execute("DELETE FROM mahsulotlar WHERE id=?", (m_edit_id,))
                     jurnalga_yozish("Sklad (Ombor)", xodim_ismi, "Tovar o'chirildi", f"{m_row['nomi']} ombordan o'chirildi")
+                    aqlli_tg_xabar("Skladdan tovar o'chirildi!", f"🗑️ <b>O'chirilgan tovar:</b> {m_row['nomi']}", xodim_ismi, turi="moliya", muhim=True)
                     st.success("🗑️ Tovar ombordan o'chirildi!")
                     st.rerun()
         else:
@@ -2199,13 +2511,29 @@ elif sahifa == "💸 Xarajat va Smena":
 # ====================================================
 elif sahifa == "👑 CEO va Hisobotlar":
     render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana, g_tugash_sana, g_davr_nomi)
+    st.markdown("---")
+    with st.expander("🧹 Tozalik xodimasi (Housekeeping) hisobini tez yaratish"):
+        with st.form("hk_user_quick_form", clear_on_submit=True, enter_to_submit=False):
+            hc1, hc2, hc3 = st.columns(3)
+            hk_ism = hc1.text_input("Tozalik xodimasi F.I.O:", placeholder="Masalan: Ozoda opa")
+            hk_login = hc2.text_input("Login:", placeholder="Masalan: tozalik1")
+            hk_parol = hc3.text_input("Parol:", placeholder="Masalan: 1234")
+            if st.form_submit_button("➕ Tozalik xodimasini qo'shish (Faqat Xonalar xaritasi va Tozalash ko'rinadi)", type="primary", use_container_width=True):
+                if hk_ism.strip() and hk_login.strip() and hk_parol.strip():
+                    if db.fetchone("SELECT login FROM xodimlar WHERE login=?", (hk_login.strip(),)):
+                        st.error("Bunday login band!")
+                    else:
+                        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (hk_login.strip(), "housekeeping", hk_parol.strip(), hk_ism.strip()))
+                        jurnalga_yozish("Xodimlar", xodim_ismi, "Tozalik xodimasi qo'shildi", f"{hk_ism} ({hk_login})")
+                        st.success(f"✅ {hk_ism} (`{hk_login}`) tizimga qo'shildi!")
+                        st.rerun()
 
 # ====================================================
-# SAHIFA 10: ⚙️ SOZLAMALAR
+# SAHIFA 10: ⚙️ SOZLAMALAR (TELEGRAM 2-KANAL VA AVTO-SVODKA BOSHQARUVI BILAN!)
 # ====================================================
 elif sahifa == "⚙️ Sozlamalar":
     st.header("⚙️ Tizim, Tariflar va Profil Sozlamalari Markazi")
-    st.caption("Shaxsiy profil xavfsizligi, ma'lumotlar bazasi zaxirasi, dinamik tarif stavkalari va ichki reglament boshqaruvi")
+    st.caption("Shaxsiy profil xavfsizligi, Telegram 2-kanalli xabarnoma (CEO & Egasi), 24 soatlik Avto-Svodka va dinamik tariflar")
 
     joriy_soz = sozlamalarni_ol()
 
@@ -2213,7 +2541,7 @@ elif sahifa == "⚙️ Sozlamalar":
     with col_s1:
         with st.container(border=True):
             st.subheader("🔐 Shaxsiy profil va Xavfsizlik")
-            st.markdown(f"👤 **Foydalanuvchi:** `{xodim_ismi}` &nbsp;|&nbsp; 🔑 **Login:** `{st.session_state.user_login}` &nbsp;|&nbsp; 🛡️ **Huquq:** `{st.session_state.role.upper()}`")
+            st.markdown(f"👤 **Foydalanuvchi:** `{xodim_ismi}` &nbsp;|&nbsp; 🔑 **Login:** `{st.session_state.user_login}` &nbsp;|&nbsp; 🛡️ **Huquq:** `{rol_nomi_korsat}`")
             st.write("")
             with st.form("settings_form", enter_to_submit=False):
                 yangi_ism = st.text_input("Ism-Sharifingiz (Hujjatlar va Auditda ko'rinadi):", value=xodim_ismi)
@@ -2258,20 +2586,19 @@ elif sahifa == "⚙️ Sozlamalar":
                     st.cache_data.clear()
                     st.success("✅ Tizim keshi tozalandi!")
             with act2:
-                if st.button("📲 Telegram Bot aloqasini tekshirish", use_container_width=True):
-                    if tg_xabar_yubor("Tizim diagnostikasi", "✅ Y.S.H. ERP aloqa testi muvaffaqiyatli o'tdi!", xodim_ismi):
-                        st.success("✅ Telegram xabari yuborildi!")
-                    else:
-                        st.error("⚠️ Telegram bot ulanishida xatolik!")
+                if st.button("📲 24 soatlik Svodkani hozir yuborish", use_container_width=True):
+                    kunlik_svodka_shakllantir_va_yubor(xodim_ismi, majburiy=True)
+                    st.success("✅ Svodka Telegramga yuborildi!")
 
-            st.write("")
-            st.download_button(
-                label="📥 To'liq ma'lumotlar bazasini Excel (.xlsx) formatda yuklab olish",
-                data=barcha_bazani_yuklash(),
-                file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+            if st.session_state.role != "housekeeping":
+                st.write("")
+                st.download_button(
+                    label="📥 To'liq ma'lumotlar bazasini Excel (.xlsx) formatda yuklab olish",
+                    data=barcha_bazani_yuklash(),
+                    file_name=f"Y.S.H._ERP_Full_Backup_{bugungi_sana}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
     st.write("")
     with st.container(border=True):
@@ -2301,6 +2628,27 @@ elif sahifa == "⚙️ Sozlamalar":
 
         if st.session_state.role == "ceo":
             st.write("")
+            with st.expander("📲 Telegram Bot: CEO va Mehmonxona Egasi (Owner) kanallarini hamda Avto-Svodkani sozlash (Faqat CEO)", expanded=False):
+                st.info("👑 **CEO Chat ID** ga barcha moliyaviy jarayonlar (Mehmonlar + Market + Sklad + Xarajatlar) boradi.\n\n🏛️ **Mehmonxona Egasi (Owner) Chat ID** ga esa faqat mehmonlar kirdi-chiqdisi, yotoq to'lovlari va 24 soatlik mehmonlar svodkasi boradi.")
+                with st.form("tg_routing_form", enter_to_submit=False):
+                    tg1, tg2, tg3 = st.columns(3, gap="medium")
+                    with tg1:
+                        y_ceo_id = st.text_input("👑 CEO Telegram Chat ID:", value=joriy_soz.get("ceo_chat_id", "6483211079"))
+                    with tg2:
+                        y_owner_id = st.text_input("🏛️ Mehmonxona Egasi (Owner) Chat ID:", value=joriy_soz.get("owner_chat_id", ""), placeholder="Masalan: 123456789")
+                    with tg3:
+                        sv_opts = ["Har kuni 12:00 va 00:00 da", "Faqat har kuni 12:00 da (Sutka yakuni)", "Faqat har kuni 00:00 da"]
+                        joriy_sv = joriy_soz.get("svodka_rejimi", "Har kuni 12:00 va 00:00 da")
+                        y_sv_rejim = st.selectbox("⏰ 24 soatlik Avto-Svodka vaqti:", sv_opts, index=sv_opts.index(joriy_sv) if joriy_sv in sv_opts else 0)
+
+                    if st.form_submit_button("💾 Telegram va Avto-Svodka sozlamalarini saqlash", type="primary", use_container_width=True):
+                        sozlamani_saqla("ceo_chat_id", y_ceo_id.strip())
+                        sozlamani_saqla("owner_chat_id", y_owner_id.strip())
+                        sozlamani_saqla("svodka_rejimi", y_sv_rejim)
+                        jurnalga_yozish("Telegram Sozlamalari", xodim_ismi, "Telegram ID yangilandi", f"CEO ID={y_ceo_id}, Owner ID={y_owner_id}, Svodka={y_sv_rejim}")
+                        st.success("✅ Telegram qabul qiluvchilar va Avto-Svodka rejimi saqlandi!")
+                        st.rerun()
+
             with st.expander("👑 ✏️ Tariflar, Chegirmalar va Ichki Reglamentni tahrirlash (Faqat CEO huquqi bilan)", expanded=False):
                 st.warning("💡 Diqqat: Bu yerda kiritilgan har qanday narx, chegirma va reglament o'zgarishi saqlanishi bilan barcha Adminlar ekranida yangilanadi va Qabul bo'limidagi hisob-kitoblar yangi tariflar bo'yicha amalga oshiriladi!")
                 with st.form("ceo_reglament_edit_form", enter_to_submit=False):
@@ -2348,7 +2696,7 @@ elif sahifa == "⚙️ Sozlamalar":
                             "Tariflar yangilandi (CEO)",
                             f"4k={y_n4:,}, 3k={y_n3:,}, 2k={y_n2:,}, Ustama=+{y_ustama:,}, Lyuks={y_luxe_uz:,}/{y_luxe_ch:,}, Talaba=-{y_ch_tal}%, 7+kun=-{y_ch_haf}%"
                         )
-                        tg_xabar_yubor(
+                        aqlli_tg_xabar(
                             "Hostel Tariflari va Reglamenti yangilandi",
                             f"👑 <b>CEO tomonidan yangi tariflar o'rnatildi:</b>\n"
                             f"• 4 kishilik: <b>{y_n4:,} UZS</b> (Chet el: {y_n4+y_ustama:,})\n"
@@ -2356,14 +2704,15 @@ elif sahifa == "⚙️ Sozlamalar":
                             f"• 2 kishilik: <b>{y_n2:,} UZS</b> (Chet el: {y_n2+y_ustama:,})\n"
                             f"• Lyuks (O'rta): <b>{y_luxe_uz:,} / {y_luxe_ch:,} UZS</b>\n"
                             f"• Chegirmalar: Talaba <b>-{y_ch_tal}%</b> | 7+ kun <b>-{y_ch_haf}%</b>",
-                            xodim_ismi, muhim=True
+                            xodim_ismi, turi="moliya", muhim=True
                         )
                         st.success("✅ Tariflar va Reglament muvaffaqiyatli yangilandi! Endi barcha adminlar yangi sozlamalar asosida ishlaydi.")
                         st.rerun()
 
-        df_oxirgi_kirish = db.read_df("SELECT vaqt, xodim, harakat, tafsilot FROM audit_log ORDER BY id DESC LIMIT 8")
-        if not df_oxirgi_kirish.empty:
-            st.markdown("---")
-            st.markdown("##### 🕒 Tizimdagi oxirgi faolliklar (Tezkor jurnal)")
-            df_oxirgi_kirish.columns = ["Sana va Vaqt", "Foydalanuvchi", "Amaliyot", "Tafsilot"]
-            st.dataframe(df_oxirgi_kirish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_oxirgi_kirish))
+        if st.session_state.role != "housekeeping":
+            df_oxirgi_kirish = db.read_df("SELECT vaqt, xodim, harakat, tafsilot FROM audit_log ORDER BY id DESC LIMIT 8")
+            if not df_oxirgi_kirish.empty:
+                st.markdown("---")
+                st.markdown("##### 🕒 Tizimdagi oxirgi faolliklar (Tezkor jurnal)")
+                df_oxirgi_kirish.columns = ["Sana va Vaqt", "Foydalanuvchi", "Amaliyot", "Tafsilot"]
+                st.dataframe(df_oxirgi_kirish, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_oxirgi_kirish))
