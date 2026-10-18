@@ -121,19 +121,13 @@ def _tg_direct_send(token, chat_id, html_text):
         return False
 
 def aqlli_tg_xabar(sarlavha, matn, xodim, turi="mijoz", muhim=False):
-    """
-    turi = 'mijoz' -> Ham CEO ga, ham Mehmonxona Egasiga (Owner) boradi.
-    turi = 'moliya' (Market, Sklad, Xarajat, Tarif) -> Faqat CEO ga boradi.
-    """
     soz = sozlamalarni_ol()
     token = soz.get("tg_token", "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE")
     ceo_id = soz.get("ceo_chat_id", "6483211079")
     owner_id = soz.get("owner_chat_id", "").strip()
 
-    # 1. CEO ga yuborish (barcha jarayonlar)
     tg_xabar_yubor(sarlavha, matn, xodim, muhim=muhim)
 
-    # 2. Mehmonxona Egasiga yuborish (faqat mijozlar kirdi-chiqdisi va yotoq to'lovlari)
     if turi == "mijoz" and owner_id and owner_id != str(ceo_id).strip():
         uz_vaqt = toshkent_vaqti().strftime("%d.%m.%Y | %H:%M")
         belgi = "🚨 <b>[MUHIM]</b> " if muhim else "🏨 "
@@ -212,7 +206,6 @@ def kunlik_svodka_shakllantir_va_yubor(xodim_ismi="Avto-Tizim (Y.S.H.)", majburi
     xarajat_sum = float(df_x['summa'].fillna(0).sum()) if not df_x.empty else 0.0
     sof_kassa = (yotoq_kirim + market_kirim) - xarajat_sum
 
-    # 1. MEHMONXONA EGASI UCHUN (Faqat mijozlar va yotoq hisoboti)
     owner_matn = (
         f"🛏 <b>Hozir band xonalar:</b> {band_x_soni} / 36 ta ({faol_odam_soni} nafar mehmon)\n"
         f"🟢 <b>Bo'sh xonalar:</b> {bosh_x_soni} ta\n"
@@ -222,7 +215,6 @@ def kunlik_svodka_shakllantir_va_yubor(xodim_ismi="Avto-Tizim (Y.S.H.)", majburi
         f"⚠️ <b>Mehmonlardagi joriy qarzlar:</b> {umumiy_qarz:,.0f} UZS"
     )
 
-    # 2. CEO UCHUN (To'liq moliyaviy, market, sklad va mijozlar hisoboti)
     kam_tovarlar_soni = db.fetchone("SELECT COUNT(*) FROM mahsulotlar WHERE qoldiq <= 5")[0] or 0
     ceo_matn = (
         f"{owner_matn}\n"
@@ -534,6 +526,7 @@ def mukammal_ui_ux_sozla(tema_nomi):
 
 # =========================================================
 # XONADAGI KROVAT / JOY O'RNI VA SUTKA FUNKSIYALARI
+# (STANDART SANOQ: 1 -> 2 | 3 -> 4)
 # =========================================================
 def xonadagi_band_krovatlar(xona_nomi, kirish_str, chiqish_str, exclude_mijoz_id=None):
     uz_now = toshkent_vaqti()
@@ -571,8 +564,37 @@ def krovat_nomini_ajrat(xona_turi_str, izoh_str=""):
     birikma = f"{xona_turi_str or ''} {izoh_str or ''}"
     m = re.search(r'\[🛏️ (.*?)\]', birikma)
     if m:
-        return m.group(1)
+        joy_matn = m.group(1)
+        joy_matn = joy_matn.replace("Chapdan ", "").replace("O'ngdan ", "").strip()
+        return joy_matn
     return ""
+
+def xona_sxemasi_kichik_html(sigim, band_map):
+    """
+    Qabul oynasida tanlangan xonaning krovatlar joylashuvini (1 -> 2 / 3 -> 4)
+    vizual 2 ustunli matritsa shaklida ko'rsatadi.
+    """
+    kataklar = []
+    for k_i in range(1, sigim + 1):
+        if k_i in band_map:
+            m_qisqa = str(band_map[k_i])[:11]
+            kataklar.append(
+                f"<div style='background:rgba(239,68,68,0.2); border:1px solid #ef4444; border-radius:8px; padding:6px 8px; text-align:center; font-size:12px;'>"
+                f"🔴 <b>{k_i}-joy</b><br><span style='font-size:11px; opacity:0.85;'>{m_qisqa}</span></div>"
+            )
+        else:
+            kataklar.append(
+                f"<div style='background:rgba(34,197,94,0.16); border:1px solid #22c55e; border-radius:8px; padding:6px 8px; text-align:center; font-size:12px;'>"
+                f"🟢 <b>{k_i}-joy</b><br><span style='font-size:11px; opacity:0.85;'>Bo'sh</span></div>"
+            )
+    if sigim == 3:
+        kataklar.append("<div style='border:1px dashed rgba(148,163,184,0.25); border-radius:8px; padding:6px 8px; text-align:center; font-size:11px; opacity:0.5;'>—</div>")
+
+    return (
+        f"<div style='margin-bottom:8px; padding:8px; border-radius:10px; background:rgba(124,58,237,0.08); border:1px solid rgba(124,58,237,0.25);'>"
+        f"<div style='font-size:11.5px; font-weight:700; margin-bottom:6px; text-align:center;'>🧭 Xona joylashuv sxemasi (1 ➔ 2" + (" | 3 ➔ 4" if sigim == 4 else (" | 3" if sigim == 3 else "")) + "):</div>"
+        f"<div style='display:grid; grid-template-columns:1fr 1fr; gap:6px;'>{''.join(kataklar)}</div></div>"
+    )
 
 def soat_matndan_time_ol(soat_str):
     try:
@@ -639,7 +661,7 @@ avto_checkout_tekshir()
 kunlik_svodka_shakllantir_va_yubor()
 
 # ==========================================
-# 2. ZAMONAVIY MENYU BAR (CEO, ADMIN VA TOZALIK XODIMASI ROLLARI BILAN)
+# 2. ZAMONAVIY MENYU BAR
 # ==========================================
 xodim_ismi = st.session_state.xodim_ismi
 hozirgi_uz_vaqt = toshkent_vaqti()
@@ -743,11 +765,11 @@ if st.sidebar.button("🚪 Tizimdan chiqish", use_container_width=True):
     st.rerun()
 
 # =========================================================
-# VIZUAL XONALAR VA KROVATLAR XARITASI (ADMIN VA TOZALIK BEKALARI UCHUN)
+# VIZUAL XONALAR VA KROVATLAR XARITASI (2D MATRITSA: 1->2 | 3->4)
 # =========================================================
 def render_vizual_krovatlar_xaritasi(qidir_x=""):
     st.markdown("##### 🗺️ Xonalar va Krovatlar (Yotoq o'rinlari) Jonli Xaritasi")
-    st.caption("Har bir xonada nechta joy band, qaysi krovatlar bo'sh, xonada erkaklar yoki ayollar yotgani va bugun 12:00 da qaysi joy bo'shashi aniq ko'rsatilgan.")
+    st.caption("Krovatlar joylashuvi xona ichidagi haqiqiy tartibda: 4 kishilikda (1 ➔ 2 tepada, 3 ➔ 4 pastda), 3 kishilikda (1 ➔ 2 tepada, 3 pastda), 2 kishilikda (1 ➔ 2 yonma-yon).")
 
     qanot_filtr = st.radio("Sektorni tanlang:", ["Barchasi", "Chap tomon", "O'rtadagi", "O'ng tomon"], horizontal=True, key="xarita_qanot_f")
     tozalik_map = barcha_xona_tozalik_ol()
@@ -812,19 +834,29 @@ def render_vizual_krovatlar_xaritasi(qidir_x=""):
             jins_badge = f" • {'👨 Erkaklar' if x_jins == 'Erkak' else '👩 Ayollar'}" if x_jins else ""
             tur_matn = "Lyuks (Dvuxspalniy)" if tomon == "O'rtadagi" else f"{sigim} kishilik"
 
-            krovat_html = ""
             if tomon == "O'rtadagi":
                 if band_odam > 0:
                     m_nom_l = ", ".join(x_mehmonlar['mijoz'].tolist())
-                    krovat_html = f"<div style='padding:4px 8px; background:rgba(139,92,246,0.2); border-radius:6px; margin-top:4px; font-size:12px;'>🛌 <b>Dvuxspalniy:</b> {m_nom_l} ({band_odam} kishi)</div>"
+                    krovat_html = f"<div style='padding:8px 10px; background:rgba(139,92,246,0.2); border:1px solid #8b5cf6; border-radius:8px; margin-top:6px; font-size:12.5px; text-align:center;'>🛌 <b>Dvuxspalniy:</b><br>{m_nom_l} ({band_odam} kishi)</div>"
                 else:
-                    krovat_html = "<div style='padding:4px 8px; background:rgba(34,197,94,0.12); border-radius:6px; margin-top:4px; font-size:12px;'>🟢 <b>Dvuxspalniy:</b> Bo'sh</div>"
+                    krovat_html = "<div style='padding:8px 10px; background:rgba(34,197,94,0.14); border:1px solid #22c55e; border-radius:8px; margin-top:6px; font-size:12.5px; text-align:center;'>🟢 <b>Dvuxspalniy:</b><br>BO'SH</div>"
             else:
+                grid_kataklar = []
                 for k_i in range(1, sigim + 1):
                     if k_i in krovat_egalari:
-                        krovat_html += f"<div style='padding:3px 8px; background:rgba(239,68,68,0.18); border-radius:6px; margin-top:3px; font-size:12px;'>🔴 <b>{k_i}-joy:</b> Band ({krovat_egalari[k_i]})</div>"
+                        m_qisqa = str(krovat_egalari[k_i])[:14]
+                        grid_kataklar.append(
+                            f"<div style='padding:6px 8px; background:rgba(239,68,68,0.18); border:1px solid #ef4444; border-radius:8px; font-size:12px; text-align:center;'>"
+                            f"🔴 <b>{k_i}-joy</b><br><span style='font-size:11px; opacity:0.9;'>{m_qisqa}</span></div>"
+                        )
                     else:
-                        krovat_html += f"<div style='padding:3px 8px; background:rgba(34,197,94,0.14); border-radius:6px; margin-top:3px; font-size:12px;'>🟢 <b>{k_i}-joy:</b> BO'SH</div>"
+                        grid_kataklar.append(
+                            f"<div style='padding:6px 8px; background:rgba(34,197,94,0.14); border:1px solid #22c55e; border-radius:8px; font-size:12px; text-align:center;'>"
+                            f"🟢 <b>{k_i}-joy</b><br><span style='font-size:11px; opacity:0.9;'>BO'SH</span></div>"
+                        )
+                if sigim == 3:
+                    grid_kataklar.append("<div style='padding:6px 8px; border:1px dashed rgba(148,163,184,0.25); border-radius:8px; font-size:11px; text-align:center; opacity:0.45;'>—</div>")
+                krovat_html = f"<div style='display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;'>{''.join(grid_kataklar)}</div>"
 
             ketish_html = f"<div style='margin-top:6px; padding:4px 8px; background:rgba(234,179,8,0.2); border-radius:6px; font-size:11.5px; color:#fde047;'>⏳ <b>Bugun 12:00 da chiqadi:</b> {', '.join(ketuvchilar)}</div>" if ketuvchilar else ""
             bg_c = "#151928" if is_dark else "#ffffff"
@@ -843,6 +875,7 @@ def render_vizual_krovatlar_xaritasi(qidir_x=""):
 
 # =========================================================
 # YORDAMCHI FUNKSIYA: YANGI BRON FORMASI
+# (STANDART KROVAT SXEMASI: 1 -> 2 | 3 -> 4 BILAN!)
 # =========================================================
 def render_qabul_formasi(form_key_suffix="main"):
     mukammal_ui_ux_sozla(st.session_state.ui_tema)
@@ -930,11 +963,7 @@ def render_qabul_formasi(form_key_suffix="main"):
             odam_soni = st.number_input(f"👥 Mehmonlar soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
             
             if tomon != "O'rtadagi":
-                joy_yonalish = st.radio(
-                    "🧭 Joylashuv tartibi (Yo'nalish):",
-                    ["➡️ Chapdan o'ngga", "⬅️ O'ngdan chapga"],
-                    horizontal=True
-                )
+                st.markdown(xona_sxemasi_kichik_html(tanlangan_xona_sigim, hozir_band_krovatlar), unsafe_allow_html=True)
                 krovat_opsiyalar = []
                 default_krovat = []
                 for j_i in range(1, tanlangan_xona_sigim + 1):
@@ -951,7 +980,6 @@ def render_qabul_formasi(form_key_suffix="main"):
                     default=default_krovat
                 )
             else:
-                joy_yonalish = ""
                 tanlangan_krovatlar = []
                 st.info("🛌 O'rtadagi Lyuks xona: Bitta Dvuxspalniy (To'liq xona)")
 
@@ -1017,9 +1045,8 @@ def render_qabul_formasi(form_key_suffix="main"):
                     elif toliq_band_vikup or odam_soni == xona_sigimi:
                         krovat_yorliq = f"Barcha joylar (1-{xona_sigimi}-joy)"
                     else:
-                        yon_qisqa = "Chapdan" if "Chapdan" in joy_yonalish else "O'ngdan"
                         joy_raqamlar = ", ".join([k.split(" (")[0] for k in tanlangan_krovatlar])
-                        krovat_yorliq = f"{yon_qisqa} {joy_raqamlar}"
+                        krovat_yorliq = joy_raqamlar
 
                     xona_turi_matn = f"To'liq band ({bazaviy_tur}) [🛏️ {krovat_yorliq}]" if (toliq_band_vikup or tomon == "O'rtadagi") else f"{bazaviy_tur} [🛏️ {krovat_yorliq}]"
 
@@ -1983,7 +2010,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                 with st.form("kochirish_form", enter_to_submit=False):
                     koch_mijoz = st.selectbox("Ko'chiriladigan mehmon:", barcha_faol_va_bron['mijoz_id'] + " - " + barcha_faol_va_bron['mijoz'] + " (Joriy: " + barcha_faol_va_bron['xona_korsat'] + ")")
                     y_xona_toliq = st.selectbox("Yangi xonani tanlang:", BARCHA_XONALAR_ROYXATI)
-                    koch_krovat_str = st.text_input("🛏️ Yangi xonadagi yotoq o'rni (masalan: Chapdan 1-joy yoki O'ngdan 2-joy):", value="Chapdan 1-joy")
+                    koch_krovat_str = st.text_input("🛏️ Yangi xonadagi yotoq o'rni (masalan: 1-joy yoki 1-joy, 2-joy):", value="1-joy")
                     koch_toliq_band = st.checkbox("🔒 Yangi xonani to'liq band qilish (Vikup)")
                     if st.form_submit_button("🔄 Xonani almashtirish", type="primary", use_container_width=True):
                         k_id = koch_mijoz.split(" - ")[0]
@@ -2098,8 +2125,8 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 joriy_xona_idx = idx
                                 break
                         y_xona_str = st.selectbox("Xona:", BARCHA_XONALAR_ROYXATI, index=joriy_xona_idx)
-                        eski_krovat = krovat_nomini_ajrat(t_row.get('xona_turi', ''), t_row.get('izoh', '')) or "Chapdan 1-joy"
-                        y_krovat_str = st.text_input("🛏️ Yotoq o'rni (masalan: Chapdan 2-joy):", value=eski_krovat)
+                        eski_krovat = krovat_nomini_ajrat(t_row.get('xona_turi', ''), t_row.get('izoh', '')) or "1-joy"
+                        y_krovat_str = st.text_input("🛏️ Yotoq o'rni (masalan: 1-joy yoki 1-joy, 2-joy):", value=eski_krovat)
                         y_odam = st.number_input("Mehmonlar soni:", min_value=1, max_value=10, value=int(t_row['odam_soni'] or 1))
                         eski_vikup = "To'liq band" in str(t_row.get('xona_turi', '') or '')
                         y_vikup = st.checkbox("🔒 Xona to'liq band (Vikup)", value=eski_vikup)
@@ -2180,7 +2207,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         st.rerun()
 
 # ====================================================
-# SAHIFA 5: 🧹 XONA TOZALASH (VIZUAL XARITA BILAN!)
+# SAHIFA 5: 🧹 XONA TOZALASH
 # ====================================================
 elif sahifa == "🧹 Xona tozalash":
     st.header("🧹 Xona tozalash va Krovatlar Joylashuvi (Housekeeping)")
@@ -2265,7 +2292,7 @@ elif sahifa == "🧹 Xona tozalash":
                             st.rerun()
 
 # ====================================================
-# SAHIFA 6: 🛒 KASSA (POS MARKET — TELEGRAM XABARI FAQAT CEO GA BORADI!)
+# SAHIFA 6: 🛒 KASSA (POS MARKET)
 # ====================================================
 elif sahifa == "🛒 Kassa (POS Market)":
     st.header("🛒 Kassa (POS Mini-Market)")
@@ -2374,7 +2401,7 @@ elif sahifa == "🛒 Kassa (POS Market)":
             st.info(f"Tanlangan davrda ({g_davr_nomi}) savdo amaliyotlari qayd etilmagan.")
 
 # ====================================================
-# SAHIFA 7: 📦 XIZMATLAR VA SKLAD (TELEGRAM XABARI FAQAT CEO GA BORADI!)
+# SAHIFA 7: 📦 XIZMATLAR VA SKLAD
 # ====================================================
 elif sahifa == "📦 Xizmatlar va Sklad":
     st.header("📦 Xizmatlar, Do'kon va Sklad Boshqaruvi")
@@ -2529,7 +2556,7 @@ elif sahifa == "👑 CEO va Hisobotlar":
                         st.rerun()
 
 # ====================================================
-# SAHIFA 10: ⚙️ SOZLAMALAR (TELEGRAM 2-KANAL VA AVTO-SVODKA BOSHQARUVI BILAN!)
+# SAHIFA 10: ⚙️ SOZLAMALAR
 # ====================================================
 elif sahifa == "⚙️ Sozlamalar":
     st.header("⚙️ Tizim, Tariflar va Profil Sozlamalari Markazi")
