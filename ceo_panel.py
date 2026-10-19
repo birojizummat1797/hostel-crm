@@ -394,15 +394,24 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
 
                     else:
                         with st.form("checkout_form", enter_to_submit=False):
+                            ceo_tasdiq_oddiy = "Ha"
+                            if eski_qoldiq > 0:
+                                st.warning(f"⚠️ **DIQQAT:** Bu mijozda **{eski_qoldiq:,.0f} UZS** qarz bor! Haqiqatdan ham checkout qilishni xohlaysizmi?")
+                                ceo_tasdiq_oddiy = st.radio(
+                                    "Tasdiqlash:",
+                                    ["Yo'q (Bekor qilish)", "Ha (Qarzdor bo'lsa ham Checkout qilinsin)"],
+                                    index=0,
+                                    horizontal=True
+                                )
                             if st.form_submit_button("🚪 Mijozni chiqarish va Arxivlash", type="primary", use_container_width=True):
-                                if mijoz_qator['qoldiq'] > 0:
-                                    st.error(f"⚠️ Mijozda {mijoz_qator['qoldiq']:,.0f} UZS qarz bor! Yuqoridagi 1- yoki 2-rejim orqali qayta hisoblang yoki qarzni yoping.")
+                                if eski_qoldiq > 0 and not ceo_tasdiq_oddiy.startswith("Ha"):
+                                    st.warning("⚠️ Checkout qilinmadi («Yo'q» tanlangan). Chiqarish uchun «Ha (Qarzdor bo'lsa ham Checkout qilinsin)» ni belgilab bosing!")
                                 else:
                                     db.execute("UPDATE bronlar SET holat = 'Chiqib ketgan', chiqish_sanasi = ? WHERE mijoz_id = ?", (bugungi_sana, c_id))
                                     xona_tozalik_ozgartir(mijoz_qator['xona'], "Tozalash kerak")
-                                    jurnalga_yozish(c_id, xodim_ismi, "Checkout", f"Mijoz ({mijoz_qator['mijoz']}) {mijoz_qator['xona']} ni topshirdi")
-                                    tg_xabar_yubor("Checkout (Mijoz chiqib ketdi)", f"👤 <b>Mijoz:</b> {mijoz_qator['mijoz']}\n🛏 <b>Xona:</b> {mijoz_qator['xona']} (🧹 Tozalashga berildi)", xodim_ismi)
-                                    st.success("Mijoz arxivlandi va xona 'Tozalash kerak' ro'yxatiga tushdi!")
+                                    jurnalga_yozish(c_id, xodim_ismi, "CEO Checkout", f"Mijoz ({mijoz_qator['mijoz']}) {mijoz_qator['xona']} ni topshirdi (Qoldiq: {eski_qoldiq:,.0f})")
+                                    tg_xabar_yubor("Checkout (Mijoz chiqib ketdi)", f"👤 <b>Mijoz:</b> {mijoz_qator['mijoz']}\n🛏 <b>Xona:</b> {mijoz_qator['xona']} (🧹 Tozalashga berildi)\n⚠️ <b>Qoldiq:</b> {max(0, eski_qoldiq):,.0f} UZS", xodim_ismi, muhim=(eski_qoldiq > 0))
+                                    st.success("✅ Mijoz hech qanday to'siqsiz arxivlandi va xona 'Tozalash kerak' ro'yxatiga tushdi!")
                                     st.rerun()
             else:
                 st.info("Hozircha faol mijozlar yo'q.")

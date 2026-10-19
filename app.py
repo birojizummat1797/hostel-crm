@@ -1396,9 +1396,28 @@ if sahifa == "🏠 Boshqaruv paneli":
                         keshni_tozala()
                         aqlli_tg_xabar("Checkout (Mehmon chiqib ketdi)", f"👤 <b>Mijoz:</b> {ch_row['mijoz']} ({ch_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {ch_row['xona']}", xodim_ismi, turi="mijoz")
                         st.rerun()
+                elif st.session_state.role == "ceo":
+                    tasdiq_key = f"ceo_dash_confirm_{ch_row['mijoz_id']}"
+                    if not st.session_state.get(tasdiq_key, False):
+                        if cc2.button("🚪 Chiqarish (Qarz)", key=f"dash_out_q_{ch_row['mijoz_id']}", use_container_width=True):
+                            st.session_state[tasdiq_key] = True
+                            st.rerun()
+                    else:
+                        st.warning(f"⚠️ **{ch_row['mijoz']}** da **{int(ch_row['qoldiq']):,} UZS** qarz bor! Haqiqatdan ham checkout qilishni xohlaysizmi?")
+                        cy1, cy2 = st.columns(2)
+                        if cy1.button("✅ Ha, checkout qilinsin", key=f"yes_d_{ch_row['mijoz_id']}", type="primary", use_container_width=True):
+                            db.execute("UPDATE bronlar SET holat='Chiqib ketgan', chiqish_sanasi=? WHERE mijoz_id=?", (bugungi_sana, ch_row['mijoz_id']))
+                            xona_tozalik_ozgartir(ch_row['xona'], "Tozalash kerak")
+                            jurnalga_yozish(ch_row['mijoz_id'], xodim_ismi, "CEO Checkout (Qarzdor)", f"{ch_row['mijoz']} ({ch_row['xona']}) {int(ch_row['qoldiq']):,} UZS qarz bilan CEO tomonidan chiqarildi")
+                            st.session_state[tasdiq_key] = False
+                            keshni_tozala()
+                            aqlli_tg_xabar("CEO Checkout (Qarzdor mijoz chiqarildi)", f"👤 <b>Mijoz:</b> {ch_row['mijoz']} ({ch_row['odam_soni']} kishi)\n🛏 <b>Xona:</b> {ch_row['xona']}\n⚠️ <b>Qoldiq qarz:</b> {int(ch_row['qoldiq']):,} UZS", xodim_ismi, turi="mijoz", muhim=True)
+                            st.rerun()
+                        if cy2.button("❌ Yo'q", key=f"no_d_{ch_row['mijoz_id']}", use_container_width=True):
+                            st.session_state[tasdiq_key] = False
+                            st.rerun()
                 else:
                     cc2.markdown("<div style='text-align:center; padding:6px; background:rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; font-weight:700;'>⚠️ Qarzdor</div>", unsafe_allow_html=True)
-
             for _, k_row in bugungi_kirishlar_df.iterrows():
                 joy_str = krovat_nomini_ajrat(k_row.get('xona_turi', ''), k_row.get('izoh', ''))
                 joy_b = f" • 🛏️ {joy_str}" if joy_str else ""
@@ -2243,19 +2262,32 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         vozvrat_kassa = st.selectbox("Qaysi kassadan qaytarildi? (Agar vozvrat bo'lsa):", ["Naqd", "Click", "Uzcard", "Humo", "Terminal", "Boshqa"])
                     vozvrat_izoh = st.text_input("Checkout / Vozvrat izohi (ixtiyoriy):", placeholder="Masalan: 10 kun o'rniga 5 kun yashadi, 5 kunlik puli qaytarildi...")
 
+                    qolgan_qarz_check = (yangi_hisob_sum - (eski_tol - vozvrat_sum)) if erta_ketish else float(c_row['qoldiq'] or 0)
+                    ceo_qarz_tasdiq = "Ha"
+                    if qolgan_qarz_check > 0 and vozvrat_sum == 0 and st.session_state.role == "ceo":
+                        st.warning(f"⚠️ **DIQQAT (CEO):** Ushbu mijozda **{qolgan_qarz_check:,.0f} UZS** qarz mavjud! Bu mijoz qarzdor — haqiqatdan ham checkout qilishni xohlaysizmi?")
+                        ceo_qarz_tasdiq = st.radio(
+                            "Qarzdor mijozni checkout qilishni tasdiqlaysizmi?",
+                            ["Yo'q (Hozircha qolsin)", "Ha (Qarzdor bo'lsa ham Checkout qilinsin)"],
+                            index=0,
+                            horizontal=True
+                        )
+
                     if st.form_submit_button("🚪 Kalitlarni topshirish (Checkout va Arxivlash)", type="primary", use_container_width=True):
-                        qolgan_qarz_check = (yangi_hisob_sum - (eski_tol - vozvrat_sum)) if erta_ketish else c_row['qoldiq']
-                        if qolgan_qarz_check > 0 and vozvrat_sum == 0:
-                            st.error(f"⚠️ Mehmonda {qolgan_qarz_check:,.0f} UZS qarz bor! Avval «💳 Qarzni yopish» bo'limidan qarzni qabul qiling (yoki CEO panelidan qayta hisoblang).")
+                        if qolgan_qarz_check > 0 and vozvrat_sum == 0 and st.session_state.role != "ceo":
+                            st.error(f"⚠️ Mehmonda {qolgan_qarz_check:,.0f} UZS qarz bor! Oddiy admin qarzdor mijozni chiqara olmaydi (Avval «💳 Qarzni yopish» bo'limidan qarzni qabul qiling yoki CEO ga murojaat qiling).")
+                        elif qolgan_qarz_check > 0 and vozvrat_sum == 0 and st.session_state.role == "ceo" and not ceo_qarz_tasdiq.startswith("Ha"):
+                            st.warning("⚠️ Checkout bekor qilindi («Yo'q» tanlangan). Chiqarish uchun «Ha (Qarzdor bo'lsa ham Checkout qilinsin)» bandini tanlab qayta bosing!")
                         else:
                             yangi_tolagan = eski_tol - vozvrat_sum
                             yangi_faktik = yangi_tolagan if (vozvrat_sum > 0 or erta_ketish) else eski_faktik
+                            yangi_qol_db = 0 if (vozvrat_sum > 0 or erta_ketish) else max(0.0, qolgan_qarz_check)
                             eski_izoh = str(c_row.get('izoh', '') or '')
                             qo_izoh = f"{eski_izoh} | Checkout ({haqiqiy_kun} sutka): {vozvrat_izoh.strip()}".strip(" |") if (vozvrat_izoh.strip() or erta_ketish) else eski_izoh
 
                             db.execute(
-                                "UPDATE bronlar SET holat='Chiqib ketgan', kunlar=?, muddat=?, chiqish_sanasi=?, tolagan_summa=?, faktik_narx=?, jami_summa=?, qoldiq=0, izoh=? WHERE mijoz_id=?",
-                                (haqiqiy_kun, f"{haqiqiy_kun} sutka", bugungi_sana, yangi_tolagan, yangi_faktik, yangi_faktik, qo_izoh, c_id)
+                                "UPDATE bronlar SET holat='Chiqib ketgan', kunlar=?, muddat=?, chiqish_sanasi=?, tolagan_summa=?, faktik_narx=?, jami_summa=?, qoldiq=?, izoh=? WHERE mijoz_id=?",
+                                (haqiqiy_kun, f"{haqiqiy_kun} sutka", bugungi_sana, yangi_tolagan, yangi_faktik, yangi_faktik, yangi_qol_db, qo_izoh, c_id)
                             )
                             xona_tozalik_ozgartir(c_row['xona'], "Tozalash kerak")
                             if vozvrat_sum > 0:
@@ -2280,9 +2312,9 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                 aqlli_tg_xabar(
                                     "Checkout (Mijoz chiqib ketdi)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)",
-                                    xodim_ismi, turi="mijoz"
+                                    xodim_ismi, turi="mijoz", muhim=(yangi_qol_db > 0)
                                 )
-                            st.success(f"✅ {c_row['mijoz']} ({c_row['xona']}) chiqarildi va xona «🧹 Tozalash kerak» ro'yxatiga o'tkazildi!")
+                            st.success(f"✅ {c_row['mijoz']} ({c_row['xona']}) hech qanday to'siqsiz chiqarildi va xona «🧹 Tozalash kerak» ro'yxatiga o'tkazildi!")
                             st.rerun()
             else:
                 st.info("Hozircha faol mehmonlar yo'q.")
