@@ -310,6 +310,19 @@ def mukammal_ui_ux_sozla(tema_nomi):
     if tema_nomi == "🌙 Qorong'u (Dark UI)":
         css = """
         <style>
+        /* MOBIL EKRANLAR UCHUN IXCHAM DIZAYN */
+        @media (max-width: 768px) {
+            .block-container { padding-top: 1.5rem !important; padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
+            div[data-testid="stHorizontalBlock"] {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+            }
+            div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+                flex: 1 1 calc(50% - 8px) !important;
+                min-width: 140px !important;
+            }
+        }
         /* 1. ASOSIY SAHIFA, TEPADAGI HEADER VA SIDEBAR FONI */
         :root {
             --primary-color: #8b5cf6 !important;
@@ -1423,8 +1436,8 @@ if sahifa == "🏠 Boshqaruv paneli":
         st.write("")
         st.markdown("##### 📊 Yaqin 7 kunlik bandlik prognozi")
         kun_qisqa = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
-        bar_cols = st.columns(7)
         lbl_col = "#c4b5fd" if is_dark else "#4f46e5"
+        bars_html_list = []
         for i in range(7):
             d_obj = hozirgi_uz_vaqt.date() + timedelta(days=i)
             d_str = d_obj.strftime("%Y-%m-%d")
@@ -1439,15 +1452,18 @@ if sahifa == "🏠 Boshqaruv paneli":
                 d_band_odam = 0
             d_foiz = int(round((d_band_xonalar / jami_xonalar_soni) * 100))
             bar_color = "#8b5cf6" if i == 0 else "#6366f1"
-            with bar_cols[i]:
-                st.markdown(
-                    f"<div style='text-align: center;'>"
-                    f"<div style='font-size: 12px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px;'>{d_foiz}% ({d_band_odam}k)</div>"
-                    f"<div style='height: 100px; width: 34px; background: rgba(124,58,237,0.15); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
-                    f"<div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div></div>"
-                    f"<div style='font-size: 13px; margin-top: 6px; color: {text_main}; font-weight: 600;'>{k_nom} ({d_obj.strftime('%d.%m')})</div></div>",
-                    unsafe_allow_html=True
-                )
+            bars_html_list.append(
+                f"<div style='text-align: center; min-width: 0;'>"
+                f"<div style='font-size: 11px; font-weight: 700; color: {lbl_col}; margin-bottom: 6px; white-space: nowrap;'>{d_foiz}% ({d_band_odam}k)</div>"
+                f"<div style='height: 95px; width: 28px; max-width: 100%; background: rgba(124,58,237,0.16); border-radius: 8px; margin: 0 auto; display: flex; align-items: flex-end; overflow: hidden;'>"
+                f"<div style='width: 100%; height: {max(6, d_foiz)}%; background: {bar_color}; border-radius: 8px;'></div></div>"
+                f"<div style='font-size: 11.5px; margin-top: 6px; color: {text_main}; font-weight: 600; white-space: nowrap;'>{k_nom}<br><span style='font-size:10.5px; opacity:0.8;'>{d_obj.strftime('%d.%m')}</span></div></div>"
+            )
+        st.markdown(
+            f"<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 10px 4px; overflow-x: auto;'>"
+            f"{''.join(bars_html_list)}</div>",
+            unsafe_allow_html=True
+        )
 
     st.markdown("---")
     st.subheader(f"💰 Moliya va Kassa Hisoboti — {g_davr_nomi}")
@@ -2190,27 +2206,56 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                 c_id = chiq_tanlov.split(" - ")[0]
                 c_row = barcha_faol_va_bron[barcha_faol_va_bron['mijoz_id'] == c_id].iloc[0]
 
+                reja_kun = int(c_row.get('kunlar', 1) or 1)
+                eski_faktik = float(c_row.get('faktik_narx', 0) or 0)
+                eski_tol = float(c_row.get('tolagan_summa', 0) or 0)
+                eski_qar = float(c_row.get('qoldiq', 0) or 0)
+                kun_stavka = float(c_row.get('kunlik_narx', 0) or (eski_faktik / max(1, reja_kun)))
+
+                st.info(
+                    f"👤 **Mehmon:** {c_row['mijoz']} ({c_row['odam_soni']} kishi) | "
+                    f"🌙 **Bron qilingan:** {reja_kun} sutka | "
+                    f"💰 **Jami hisob:** {eski_faktik:,.0f} UZS | "
+                    f"✅ **To'lagan:** {eski_tol:,.0f} UZS | "
+                    f"⚠️ **Qoldiq qarz:** {max(0.0, eski_qar):,.0f} UZS"
+                )
+
+                erta_ketish = st.checkbox("🧮 Mijoz muddatidan oldin ketyaptimi? (Haqiqiy yashagan kuniga qarab Vozvratni avtomatik hisoblash)")
+                if erta_ketish:
+                    ec1, ec2 = st.columns(2, gap="medium")
+                    with ec1:
+                        haqiqiy_kun = st.number_input("🌙 Haqiqiy yashagan sutkasi:", min_value=0, max_value=reja_kun, value=max(1, reja_kun - 1))
+                    with ec2:
+                        stavka_in = st.number_input("💵 1 sutkalik hisob stavkasi (UZS):", min_value=0, value=int(kun_stavka), step=5000)
+                    yangi_hisob_sum = float(haqiqiy_kun * stavka_in)
+                    avto_vozvrat_sum = int(max(0.0, eski_tol - yangi_hisob_sum))
+                    st.success(f"📊 **Qayta hisob:** {haqiqiy_kun} sutka × {stavka_in:,.0f} = **{yangi_hisob_sum:,.0f} UZS** ➡️ Mijozga qaytariladigan **Vozvrat: {avto_vozvrat_sum:,.0f} UZS**")
+                else:
+                    haqiqiy_kun = reja_kun
+                    yangi_hisob_sum = eski_faktik
+                    avto_vozvrat_sum = 0
+
                 with st.form("admin_checkout_form", enter_to_submit=False):
-                    st.caption(f"👤 Mehmon: **{c_row['mijoz']}** ({c_row['odam_soni']} kishi) | To'lagan: **{int(c_row['tolagan_summa']):,} UZS** | Qoldiq qarz: **{max(0, int(c_row['qoldiq'])):,} UZS**")
                     col_v1, col_v2 = st.columns(2, gap="medium")
                     with col_v1:
-                        vozvrat_sum = st.number_input("⏪ Mehmonga qaytarilgan summa / Vozvrat (0 = qaytarilmadi):", min_value=0, max_value=int(c_row['tolagan_summa'] or 0), value=0, step=10000)
+                        vozvrat_sum = st.number_input("⏪ Mehmonga qaytarilgan summa / Vozvrat (0 = qaytarilmadi):", min_value=0, max_value=int(eski_tol), value=avto_vozvrat_sum, step=5000)
                     with col_v2:
                         vozvrat_kassa = st.selectbox("Qaysi kassadan qaytarildi? (Agar vozvrat bo'lsa):", ["Naqd", "Click", "Uzcard", "Humo", "Terminal", "Boshqa"])
-                    vozvrat_izoh = st.text_input("Checkout / Vozvrat izohi (ixtiyoriy):", placeholder="Masalan: Mehmon 1 kun erta ketdi, kalit topshirildi...")
+                    vozvrat_izoh = st.text_input("Checkout / Vozvrat izohi (ixtiyoriy):", placeholder="Masalan: 10 kun o'rniga 5 kun yashadi, 5 kunlik puli qaytarildi...")
 
                     if st.form_submit_button("🚪 Kalitlarni topshirish (Checkout va Arxivlash)", type="primary", use_container_width=True):
-                        if c_row['qoldiq'] > 0 and vozvrat_sum == 0:
-                            st.error(f"⚠️ Mehmonda {c_row['qoldiq']:,.0f} UZS qarz bor! Avval «💳 Qarzni yopish» bo'limidan qarzni qabul qiling.")
+                        qolgan_qarz_check = (yangi_hisob_sum - (eski_tol - vozvrat_sum)) if erta_ketish else c_row['qoldiq']
+                        if qolgan_qarz_check > 0 and vozvrat_sum == 0:
+                            st.error(f"⚠️ Mehmonda {qolgan_qarz_check:,.0f} UZS qarz bor! Avval «💳 Qarzni yopish» bo'limidan qarzni qabul qiling (yoki CEO panelidan qayta hisoblang).")
                         else:
-                            yangi_tolagan = float(c_row['tolagan_summa']) - vozvrat_sum
-                            yangi_faktik = yangi_tolagan if vozvrat_sum > 0 else float(c_row['faktik_narx'])
+                            yangi_tolagan = eski_tol - vozvrat_sum
+                            yangi_faktik = yangi_tolagan if (vozvrat_sum > 0 or erta_ketish) else eski_faktik
                             eski_izoh = str(c_row.get('izoh', '') or '')
-                            qo_izoh = f"{eski_izoh} | Checkout: {vozvrat_izoh.strip()}".strip(" |") if vozvrat_izoh.strip() else eski_izoh
+                            qo_izoh = f"{eski_izoh} | Checkout ({haqiqiy_kun} sutka): {vozvrat_izoh.strip()}".strip(" |") if (vozvrat_izoh.strip() or erta_ketish) else eski_izoh
 
                             db.execute(
-                                "UPDATE bronlar SET holat='Chiqib ketgan', chiqish_sanasi=?, tolagan_summa=?, faktik_narx=?, jami_summa=?, qoldiq=0, izoh=? WHERE mijoz_id=?",
-                                (bugungi_sana, yangi_tolagan, yangi_faktik, yangi_faktik, qo_izoh, c_id)
+                                "UPDATE bronlar SET holat='Chiqib ketgan', kunlar=?, muddat=?, chiqish_sanasi=?, tolagan_summa=?, faktik_narx=?, jami_summa=?, qoldiq=0, izoh=? WHERE mijoz_id=?",
+                                (haqiqiy_kun, f"{haqiqiy_kun} sutka", bugungi_sana, yangi_tolagan, yangi_faktik, yangi_faktik, qo_izoh, c_id)
                             )
                             xona_tozalik_ozgartir(c_row['xona'], "Tozalash kerak")
                             if vozvrat_sum > 0:
@@ -2218,12 +2263,13 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                                     "INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
                                     (bugungi_sana, c_id, c_row['mijoz'], "Vozvrat (Pul qaytarish)", -vozvrat_sum, vozvrat_kassa, vozvrat_kassa, xodim_ismi)
                                 )
-                                jurnalga_yozish(c_id, xodim_ismi, "Checkout + Vozvrat", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni bo'shatdi. Qaytarildi: -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})")
+                                jurnalga_yozish(c_id, xodim_ismi, "Checkout + Vozvrat", f"Mijoz ({c_row['mijoz']}) {c_row['xona']} ni bo'shatdi ({haqiqiy_kun} sutka). Qaytarildi: -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})")
                                 keshni_tozala()
                                 aqlli_tg_xabar(
                                     "Checkout va Pul qaytarish (Vozvrat)",
                                     f"👤 <b>Mijoz:</b> {c_row['mijoz']} ({c_row['odam_soni']} kishi)\n"
                                     f"🛏 <b>Bo'shagan xona:</b> {c_row['xona']} (🧹 Tozalashga berildi)\n"
+                                    f"🌙 <b>Yashagan muddati:</b> {haqiqiy_kun} sutka (Reja: {reja_kun} sutka)\n"
                                     f"⏪ <b>Qaytarilgan summa (Vozvrat):</b> -{vozvrat_sum:,.0f} UZS ({vozvrat_kassa})\n"
                                     f"💰 <b>Qolgan sof to'lov:</b> {yangi_tolagan:,.0f} UZS",
                                     xodim_ismi, turi="mijoz", muhim=True
@@ -2252,6 +2298,9 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                     e1, e2, e3 = st.columns(3, gap="medium")
                     with e1:
                         y_ism = st.text_input("Mehmon F.I.O / Telefon:", value=str(t_row['mijoz']))
+                        toifa_list = ["O'zbekiston fuqarosi", "Chet el fuqarosi", "Talaba (Student)"]
+                        joriy_toifa = str(t_row.get('toifa') or "O'zbekiston fuqarosi")
+                        y_toifa = st.selectbox("🪪 Tarif toifasi:", toifa_list, index=toifa_list.index(joriy_toifa) if joriy_toifa in toifa_list else 0)
                         joriy_xona_idx = 0
                         for idx, x_str in enumerate(BARCHA_XONALAR_ROYXATI):
                             if f"| {t_row['xona']} (" in x_str:
@@ -2276,13 +2325,15 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         y_kirish = st.date_input("📅 Kirish sanasi:", value=def_kirish)
                         eski_soat = str(t_row['sana']).split("(")[1].replace(")", "") if "(" in str(t_row.get('sana', '')) else toshkent_vaqti().strftime("%H:%M")
                         y_soat_obj = st.time_input("🕒 Kirish soati:", value=soat_matndan_time_ol(eski_soat), step=60)
-                        y_chiqish_date = st.date_input("🛫 Chiqish sanasi (12:00 da):", value=def_chiqish)
-                        y_kunlar = st.number_input("Yashash sutkasi:", min_value=1, max_value=365, value=int(t_row['kunlar'] or 1))
+                        y_kunlar = st.number_input("🌙 Yashash sutkasi:", min_value=1, max_value=365, value=int(t_row['kunlar'] or 1))
+                        avto_sana_mosla = st.checkbox("📅 Chiqish sanasini sutka soniga qarab avtomatik hisoblash", value=True)
+                        y_chiqish_date = st.date_input("🛫 Yoki chiqish sanasini qo'lda tanlang (12:00 da):", value=def_chiqish)
                     with e3:
-                        y_faktik = st.number_input("Jami hisoblangan summa (UZS):", min_value=0, value=int(t_row['faktik_narx'] or 0), step=10000)
+                        avto_tarif_qayta_hisob = st.checkbox("🔄 Standart tarif bo'yicha Jami summani avtomatik qayta hisoblash (Xato hisobni tuzatish)", value=False)
+                        y_faktik = st.number_input("💰 Jami hisoblangan summa (UZS) (Qo'lda):", min_value=0, value=int(t_row['faktik_narx'] or 0), step=10000)
                         y_tahrir_chegirma = st.number_input("🏷️ Jami summadan chegirma % (0 = o'zgarmaydi):", min_value=0, max_value=100, value=0, step=5)
                         eski_tolagan = int(t_row['tolagan_summa'] or 0)
-                        y_tolagan = st.number_input("Jami to'lagan summasi (UZS):", min_value=0, value=eski_tolagan, step=10000)
+                        y_tolagan = st.number_input("💵 Jami to'lagan summasi (UZS) (Kassa):", min_value=0, value=eski_tolagan, step=10000)
                         y_holat = st.selectbox("Holati:", ["To'langan", "Qarzdorlik", "Chiqib ketgan"], index=0 if t_row['holat']=="To'langan" else (2 if t_row['holat']=="Chiqib ketgan" else 1))
                         y_izoh = st.text_input("Izoh:", value=str(t_row['izoh'] or ''))
 
@@ -2301,43 +2352,61 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
                         y_kirish_str = y_kirish.strftime("%Y-%m-%d")
                         y_soat_str = y_soat_obj.strftime("%H:%M") if y_soat_obj else eski_soat
                         y_sana_vaqt_toliq = f"{y_kirish_str} ({y_soat_str})"
-                        y_chiqish_str = y_chiqish_date.strftime("%Y-%m-%d")
 
-                        if y_tahrir_chegirma > 0:
-                            y_faktik = int(round(y_faktik * ((100.0 - float(y_tahrir_chegirma)) / 100.0)))
+                        if avto_sana_mosla:
+                            y_chiqish_str = (y_kirish + timedelta(days=y_kunlar)).strftime("%Y-%m-%d")
+                        else:
+                            y_chiqish_str = y_chiqish_date.strftime("%Y-%m-%d")
+
+                        if avto_tarif_qayta_hisob:
+                            y_kunlik_st, hisob_jami, _ = dinamik_narx_hisobla(
+                                y_tomon, y_xona, y_toifa, y_odam, y_kunlar,
+                                toliq_xona=y_vikup, maxsus_chegirma_foiz=y_tahrir_chegirma
+                            )
+                            y_faktik = int(round(hisob_jami))
+                        else:
+                            if y_tahrir_chegirma > 0:
+                                y_faktik = int(round(y_faktik * ((100.0 - float(y_tahrir_chegirma)) / 100.0)))
+                            y_kunlik_st = round(y_faktik / max(1, y_kunlar))
 
                         y_qoldiq = y_faktik - y_tolagan
                         if y_holat != "Chiqib ketgan":
                             y_holat = "To'langan" if y_qoldiq <= 0 else "Qarzdorlik"
+                        else:
+                            y_qoldiq = 0
 
                         toza_izoh = re.sub(r'\[🛏️ .*?\]', '', y_izoh).strip()
                         yak_izoh = f"{kr_tag.strip()} {toza_izoh}".strip()
 
                         db.execute("""
                             UPDATE bronlar SET 
-                                mijoz=?, tomon=?, xona=?, xona_turi=?, odam_soni=?, sana=?, kirish_sanasi=?, chiqish_sanasi=?,
-                                kunlar=?, faktik_narx=?, jami_summa=?, tolagan_summa=?, qoldiq=?, holat=?, izoh=?
+                                mijoz=?, toifa=?, tomon=?, xona=?, xona_turi=?, odam_soni=?, sana=?, kirish_sanasi=?, chiqish_sanasi=?,
+                                kunlar=?, muddat=?, kunlik_narx=?, faktik_narx=?, jami_summa=?, tolagan_summa=?, qoldiq=?, holat=?, izoh=?
                             WHERE mijoz_id=?
-                        """, (y_ism.strip(), y_tomon, y_xona, y_xona_turi, y_odam, y_sana_vaqt_toliq, y_kirish_str, y_chiqish_str, y_kunlar, y_faktik, y_faktik, y_tolagan, y_qoldiq, y_holat, yak_izoh, t_id))
+                        """, (
+                            y_ism.strip(), y_toifa, y_tomon, y_xona, y_xona_turi, y_odam, y_sana_vaqt_toliq, y_kirish_str, y_chiqish_str,
+                            y_kunlar, f"{y_kunlar} sutka", y_kunlik_st, y_faktik, y_faktik, y_tolagan, y_qoldiq, y_holat, yak_izoh, t_id
+                        ))
                         
                         farq_tolov = y_tolagan - eski_tolagan
                         if farq_tolov != 0:
                             t_taf_eski = str(t_row.get('tolov_tafsiloti', 'Naqd') or 'Naqd')
                             t_shakl_eski = str(t_row.get('tolov_turi', 'Naqd') or 'Naqd')
+                            manba_nom = "Vozvrat (Tahrirlash)" if farq_tolov < 0 else "Tahrirlash (Kassa tuzatish)"
                             db.execute("INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
-                                       (bugungi_sana, t_id, y_ism.strip(), "Tahrirlash (Kassa tuzatish)", farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
+                                       (bugungi_sana, t_id, y_ism.strip(), manba_nom, farq_tolov, t_shakl_eski, t_taf_eski, xodim_ismi))
 
-                        jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism} ({y_odam} kishi), Xona: {y_xona} ({y_xona_turi}), Kirish: {y_sana_vaqt_toliq} -> Chiqish: {y_chiqish_str}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
+                        jurnalga_yozish(t_id, xodim_ismi, "Mijoz tahrirlandi", f"Ism: {y_ism} ({y_odam} kishi | {y_toifa}), Xona: {y_xona} ({y_xona_turi}), Sutka: {y_kunlar}, Jami: {y_faktik:,.0f}, To'lagan: {y_tolagan:,.0f}")
                         keshni_tozala()
                         aqlli_tg_xabar(
                             "Mijoz ma'lumotlari tahrirlandi",
                             f"🆔 <b>ID:</b> {t_id}\n"
-                            f"👤 <b>Mijoz:</b> {y_ism} ({y_odam} kishi | {y_xona} — {y_xona_turi})\n"
+                            f"👤 <b>Mijoz:</b> {y_ism} ({y_odam} kishi | {y_toifa} | {y_xona})\n"
                             f"🕒 <b>Kirish:</b> {y_sana_vaqt_toliq} ➡️ <b>Chiqish:</b> {y_chiqish_str} 12:00 ({y_kunlar} sutka)\n"
                             f"💰 <b>Yangi jami:</b> {y_faktik:,.0f} UZS | <b>To'lagan:</b> {y_tolagan:,.0f} UZS | <b>Qoldiq:</b> {max(0, y_qoldiq):,.0f} UZS",
                             xodim_ismi, turi="mijoz", muhim=True
                         )
-                        st.success("✅ Mehmon ma'lumotlari va kassa balansi muvaffaqiyatli yangilandi!")
+                        st.success("✅ Mehmon ma'lumotlari, hisob-kitob va kassa balansi muvaffaqiyatli yangilandi!")
                         st.rerun()
 
 # ====================================================
