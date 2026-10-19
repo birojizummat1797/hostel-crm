@@ -591,6 +591,55 @@ def mukammal_ui_ux_sozla(tema_nomi):
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
         }
+        /* 1-SKRINSHOT TUZATISHI: KVITANSIYA / CHEK HAR DOIM OQ QOG'OZDA QORA YOZUV BO'LISHI UCHUN */
+        .ysh-receipt,
+        .ysh-receipt * {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border-color: #94a3b8 !important;
+        }
+
+        /* 3 VA 4-SKRINSHOT TUZATISHI: GORIZONTAL RADIO MENYULARNI ZAMONAVIY PILL-NAVBAR QILISH */
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] {
+            background-color: #151928 !important;
+            border: 1px solid #2a324b !important;
+            padding: 6px !important;
+            border-radius: 14px !important;
+            gap: 8px !important;
+            display: inline-flex !important;
+            flex-wrap: wrap !important;
+            width: 100% !important;
+        }
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label {
+            background-color: #1c2237 !important;
+            border: 1px solid #2e3650 !important;
+            border-radius: 10px !important;
+            padding: 8px 16px !important;
+            margin: 0 !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            flex: 1 1 auto !important;
+            justify-content: center !important;
+        }
+        /* Radio yumaloq nuqtasini yashirish */
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {
+            display: none !important;
+        }
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
+            background-color: #28304d !important;
+            border-color: #8b5cf6 !important;
+        }
+        /* Tanlangan (Faol) bo'lim — xuddi 4-skrinshotdagi yorqin kapsula-tugma! */
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) {
+            background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%) !important;
+            border: 1px solid #a78bfa !important;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45) !important;
+        }
+        div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) * {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+        }
         </style>
         """
         st.markdown(css, unsafe_allow_html=True)
@@ -1053,7 +1102,9 @@ def _render_qabul_inner(form_key_suffix="main"):
     hozir_band_krovatlar = xonadagi_band_krovatlar(tanlangan_xona_nom, bugungi_sana, (hozirgi_uz_vaqt.date() + timedelta(days=1)).strftime("%Y-%m-%d"))
 
     uz_now_form = toshkent_vaqti()
-    default_time_obj = dt_time(uz_now_form.hour, uz_now_form.minute)
+    time_state_key = f"qabul_def_time_{form_key_suffix}"
+    if time_state_key not in st.session_state:
+        st.session_state[time_state_key] = dt_time(uz_now_form.hour, uz_now_form.minute)
 
     with st.form(f"qabul_form_{form_key_suffix}", clear_on_submit=True, enter_to_submit=False):
         f_top1, f_top2 = st.columns([1.4, 1.6], gap="medium")
@@ -1081,10 +1132,9 @@ def _render_qabul_inner(form_key_suffix="main"):
             
             ks1, ks2 = st.columns([1.25, 1.05])
             with ks1:
-                kirish_sanasi = st.date_input("📅 Kelish sanasi *", uz_now_form.date())
+                kirish_sanasi = st.date_input("📅 Kelish sanasi *", value=uz_now_form.date(), key=f"k_sana_{form_key_suffix}")
             with ks2:
-                kirish_soati_obj = st.time_input("🕒 Kelish soati *", value=default_time_obj, step=60)
-            
+                kirish_soati_obj = st.time_input("🕒 Kelish soati *", value=st.session_state[time_state_key], step=60, key=f"k_soat_{form_key_suffix}")
         with col2:
             maks_odam = 2 if tomon == "O'rtadagi" else tanlangan_xona_sigim
             odam_soni = st.number_input(f"👥 Mehmonlar soni (1 - {maks_odam})", min_value=1, max_value=maks_odam, value=1)
@@ -2023,7 +2073,7 @@ elif sahifa == "👥 Bronlar va Mehmonlar":
 
             with st.expander("🖨️ Hisobni chop etish (Ichki Kvitansiya / Chek)"):
                 st.markdown(
-                    f"<div style='background:#ffffff; color:#0f172a; padding:24px; border-radius:12px; border:2px dashed #64748b; max-width:650px; margin:0 auto; font-family:monospace;'>"
+                    f"<div class='ysh-receipt' style='background:#ffffff; color:#0f172a; padding:24px; border-radius:12px; border:2px dashed #64748b; max-width:650px; margin:0 auto; font-family:monospace;'>"
                     f"<h3 style='text-align:center; color:#0f172a; margin:0;'>🏨 YANGI SERGELI HOSTEL (Y.S.H.)</h3>"
                     f"<p style='text-align:center; color:#475569; margin:4px 0 14px 0;'>Ichki Hisob-kitob Cheki № {f_id}</p>"
                     f"<hr style='border:1px solid #cbd5e1;'>"

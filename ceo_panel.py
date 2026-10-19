@@ -145,6 +145,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
         [
             "📊 Davriy Hisobot (Sklad va Xarajat)",
             "🚪 Checkout, Qayta Hisob & Tuzatish",
+            "📲 Telegram Xabarlar",
             "👥 Xodimlar va Rollar",
             "🕵️ Batafsil Audit",
             "📝 Maxsus Izohlar",
@@ -560,3 +561,40 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
                     st.rerun()
         else:
             st.info("Bazada ma'lumot yo'q.")
+    elif ceo_tanlov == "📲 Telegram Xabarlar":
+        st.subheader("📲 Tizim tomonidan Telegramga yuborilgan xabarlar nazorati")
+        st.caption("CEO va Mehmonxona Egasiga (Owner) bot orqali yuborilgan barcha xabarnomalar tarixi va holati")
+
+        try:
+            if g_bosh_sana and g_tugash_sana:
+                df_tg = db.read_df(
+                    "SELECT id, vaqt, sarlavha, qabul_qiluvchi, xodim, holat, matn FROM tg_xabarlar_log WHERE vaqt >= ? AND vaqt <= ? ORDER BY id DESC",
+                    (g_bosh_sana + " 00:00:00", g_tugash_sana + " 23:59:59")
+                )
+            else:
+                df_tg = db.read_df("SELECT id, vaqt, sarlavha, qabul_qiluvchi, xodim, holat, matn FROM tg_xabarlar_log ORDER BY id DESC LIMIT 200")
+        except Exception:
+            df_tg = pd.DataFrame()
+
+        t_col1, t_col2 = st.columns([3, 1])
+        with t_col1:
+            qidir_tg = st.text_input("🔍 Xabarlar ichidan qidirish (Mijoz ismi, xona, amaliyot yoki xodim):", placeholder="Masalan: 19-xona, Checkout, Savdo...")
+        with t_col2:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            if st.button("📲 Test xabar yuborib tekshirish", use_container_width=True):
+                tg_xabar_yubor("Nazorat tekshiruvi", "✅ Telegram xabarlar jurnali faol ishlamoqda!", xodim_ismi)
+                st.rerun()
+
+        if not df_tg.empty:
+            if qidir_tg:
+                df_tg = df_tg[
+                    df_tg['sarlavha'].str.contains(qidir_tg, case=False, na=False) |
+                    df_tg['matn'].str.contains(qidir_tg, case=False, na=False) |
+                    df_tg['xodim'].str.contains(qidir_tg, case=False, na=False)
+                ]
+            st.markdown(f"**Jami yuborilgan xabarlar ({g_davr_nomi}):** `{len(df_tg)} ta`")
+            df_tg_view = df_tg[['vaqt', 'sarlavha', 'qabul_qiluvchi', 'xodim', 'holat', 'matn']].copy()
+            df_tg_view.columns = ["Sana va Vaqt", "Amaliyot / Sarlavha", "Kimga Yuborildi", "Mas'ul Xodim", "Status", "Xabar Matni (To'liq)"]
+            st.dataframe(df_tg_view, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_tg_view))
+        else:
+            st.info("Hozircha Telegram xabarlar tarixi bo'sh. Yangi amaliyot bajarilishi yoki 'Test xabar yuborish' bosilishi bilan shu yerda paydo bo'ladi.")
