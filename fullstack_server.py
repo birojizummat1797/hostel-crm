@@ -1,23 +1,22 @@
+import os
+import re
+import sqlite3
+import pandas as pd
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timedelta
-import re
 
-# Mavjud tizimning bazasi va funksiyalariga to'g'ridan-to'g'ri ulanamiz (100% sinxron!)
+# Mavjud tizimdan faqat toza obyektlar va konstantalarni olamiz
 from database import (
     db, XONALAR, XONA_TOMON_MAP, toshkent_vaqti, xona_sigimini_ol,
     xonadagi_band_joyni_hisobla, xona_jinsini_tekshir, id_yaratish,
-    jurnalga_yozish, xona_tozalik_ozgartir, barcha_xona_tozalik_ol
+    jurnalga_yozish
 )
 from tg_bot import tg_xabar_yubor
 
 app = FastAPI(title="Y.S.H. ERP | Next-Gen Fullstack API")
-
-class LoginReq(BaseModel):
-    login: str
-    parol: str
 
 class YangiBronReq(BaseModel):
     mijoz: str
@@ -52,29 +51,78 @@ def _krovat_ajrat(x_tur, izoh):
         return m.group(1).replace("Chapdan ", "").replace("O'ngdan ", "").strip()
     return ""
 
-@app.post("/api/login")
-def api_login(req: LoginReq):
-    u = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=? AND parol=?", (req.login.strip(), req.parol.strip()))
-    if not u:
-        raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri!")
-    return {"role": u[0], "ism": u[1] or u[2].upper(), "login": u[2]}
+def _tozalik_ol_direct():
+    """Streamlit @st.cache_data ni chetlab o'tib, to'g'ridan-to'g'ri bazadan o'qiydi"""
+    try:
+        rows = db.fetchall("SELECT xona, holat FROM xona_tozalik")
+        return {str(r[0]): str(r[1]) for r in rows}
+    except Exception:
+        return {}
+
+def _tozalik_ozgartir_direct(xona_nomi, yangi_holat="Tozalash kerak"):
+    hozir = toshkent_vaqti().strftime("%Y-%m-%d %H:%M")
+    try:
+        mavjud = db.fetchone("SELECT xona FROM xona_tozalik WHERE xona=?", (xona_nomi,))
+        if mavjud:
+            db.execute("UPDATE xona_tozalik SET holat=?, vaqt=? WHERE xona=?", (yangi_holat, hozir, xona_nomi))
+        else:
+            db.execute("INSERT INTO xona_tozalik (xona, holat, vaqt) VALUES (?,?,?)", (xona_nomi, yangi_holat, hozir))
+    except Exception:
+        pass
+
+def _s(val, default=""):
+    if val is None or pd.isna(val):
+        return default
+    return str(val)
+
+def _f(val, default=0.0):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        return float(val)
+    except Exception:
+        return default
 
 @app.get("/api/dashboard")
 def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = None):
     uz_now = toshkent_vaqti()
     bugun = uz_now.strftime("%Y-%m-%d")
-    df_b = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
-    df_t = db.read_df("SELECT * FROM tolovlar_tarixi ORDER BY id DESC")
-    df_x = db.read_df("SELECT * FROM xarajatlar ORDER BY id DESC")
-    df_tg = pd.DataFrame()
+
+    try:
+        df_b = db.read_df("SELECT * FROM bronlar ORDER BY id DESC")
+    except Exception:
+        df_b = pd.DataFrame()
+
+    try:
+        df_t = db.read_df("SELECT * FROM tolovlar_tarixi ORDER BY id DESC")
+    except Exception:
+        df_t = pd.DataFrame()
+
+    try:
+        df_x = db.read_df("SELECT * FROM xarajatlar ORDER BY id DESC")
+    except Exception:
+        df_x = pd.DataFrame()
+
+    df_tg_list = []
     try:
         df_tg = db.read_df("SELECT vaqt, sarlavha, qabul_qiluvchi, xodim, holat, matn FROM tg_xabarlar_log ORDER BY id DESC LIMIT 50")
+        if not df_tg.empty:
+            for _, tr in df_tg.iterrows():
+                df_tg_list.append({
+                    "vaqt": _s(tr.get("vaqt")),
+                    "sarlavha": _s(tr.get("sarlavha")),
+                    "qabul_qiluvchi": _s(tr.get("qabul_qiluvchi")),
+                    "xodim": _s(tr.get("xodim")),
+                    "holat": _s(tr.get("holat")),
+                    "matn": _s(tr.get("matn"))
+                })
     except Exception:
         pass
-    toz_map = barcha_xona_tozalik_ol()
 
-    b_s = bosh_sana or bugun
-    t_s = tugash_sana or bugun
+    toz_map = _tozalik_ol_direct()
+
+    b_s = bosh_sana if bosh_sana else bugun
+    t_s = tugash_sana if tugash_sana else bugun
 
     faol_list, barcha_list = [], []
     band_xonalar = set()
@@ -84,16 +132,17 @@ def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = 
 
     if not df_b.empty:
         for _, r in df_b.iterrows():
-            k_s = str(r.get('kirish_sanasi') or '')
-            ch_s = str(r.get('chiqish_sanasi') or '')
-            hol = str(r.get('holat') or '')
-            odam = int(r.get('odam_soni') or 1)
-            qol = float(r.get('qoldiq') or 0)
-            joy = _krovat_ajrat(r.get('xona_turi'), r.get('izoh'))
+            k_s = _s(r.get('kirish_sanasi'))
+            ch_s = _s(r.get('chiqish_sanasi'))
+            hol = _s(r.get('holat'))
+            odam = int(_f(r.get('odam_soni'), 1))
+            qol = _f(r.get('qoldiq'), 0.0)
+            joy = _krovat_ajrat(_s(r.get('xona_turi')), _s(r.get('izoh')))
+            x_nom_r = _s(r.get('xona'))
 
             is_active_today = (hol != 'Chiqib ketgan') and ((k_s == ch_s and k_s == bugun) or (k_s <= bugun and ch_s > bugun))
             if is_active_today:
-                band_xonalar.add(r['xona'])
+                band_xonalar.add(x_nom_r)
                 faol_odam += odam
             if hol != 'Chiqib ketgan' and qol > 0:
                 umumiy_qarz += qol
@@ -103,30 +152,29 @@ def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = 
                 chiqqan_odam += odam
 
             item = {
-                "mijoz_id": r['mijoz_id'],
-                "mijoz": r['mijoz'],
-                "telefon": r.get('telefon') or "",
-                "jinsi": r.get('jinsi') or "Erkak",
-                "toifa": r.get('toifa') or "",
-                "xona": r['xona'],
-                "tomon": r.get('tomon') or XONA_TOMON_MAP.get(r['xona'], ""),
+                "mijoz_id": _s(r.get('mijoz_id')),
+                "mijoz": _s(r.get('mijoz')),
+                "telefon": _s(r.get('telefon')),
+                "jinsi": _s(r.get('jinsi'), "Erkak"),
+                "toifa": _s(r.get('toifa')),
+                "xona": x_nom_r,
+                "tomon": _s(r.get('tomon')) or XONA_TOMON_MAP.get(x_nom_r, ""),
                 "joy": joy,
                 "odam_soni": odam,
-                "kunlar": int(r.get('kunlar') or 1),
-                "faktik_narx": float(r.get('faktik_narx') or 0),
-                "tolagan_summa": float(r.get('tolagan_summa') or 0),
+                "kunlar": int(_f(r.get('kunlar'), 1)),
+                "faktik_narx": _f(r.get('faktik_narx'), 0.0),
+                "tolagan_summa": _f(r.get('tolagan_summa'), 0.0),
                 "qoldiq": qol,
-                "kirish_vaqti": r.get('sana') or k_s,
+                "kirish_vaqti": _s(r.get('sana')) or k_s,
                 "kirish_sanasi": k_s,
                 "chiqish_sanasi": ch_s,
                 "holat": hol,
-                "izoh": r.get('izoh') or ""
+                "izoh": _s(r.get('izoh'))
             }
             barcha_list.append(item)
             if hol != 'Chiqib ketgan':
                 faol_list.append(item)
 
-    # Xonalar va 2D krovatlar xaritasi
     xonalar_xaritasi = []
     for tomon, x_dict in XONALAR.items():
         for x_nom, (sigim, narx) in x_dict.items():
@@ -137,7 +185,8 @@ def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = 
             for m in faol_list:
                 if m['xona'] == x_nom and ((m['kirish_sanasi'] <= bugun and m['chiqish_sanasi'] > bugun) or m['kirish_sanasi'] == bugun):
                     x_odam += m['odam_soni']
-                    if not x_jins: x_jins = m['jinsi']
+                    if not x_jins:
+                        x_jins = m['jinsi']
                     if "Barcha joylar" in m['joy'] or tomon == "O'rtadagi":
                         vikup = True
                         for k_i in range(1, sigim + 1):
@@ -150,27 +199,32 @@ def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = 
             xonalar_xaritasi.append({
                 "xona": x_nom,
                 "tomon": tomon,
-                "sigim": sigim,
-                "narx": narx,
+                "sigim": int(sigim),
+                "narx": float(narx),
                 "tozalik": toz_map.get(x_nom, "Toza"),
-                "band_odam": x_odam,
-                "bosh_joy": bosh_joy,
+                "band_odam": int(x_odam),
+                "bosh_joy": int(bosh_joy),
                 "jinsi": x_jins,
                 "krovatlar": krovatlar_holati
             })
 
+    yotoq_kirim, market_kirim = 0.0, 0.0
     if not df_t.empty:
-        df_tf = df_t[(df_t['sana'] >= b_s) & (df_t['sana'] <= t_s)] if (bosh_sana and tugash_sana) else df_t
-        yotoq_kirim = float(df_tf[df_tf['manba'] != 'Market Savdo']['summa'].fillna(0).sum())
-        market_kirim = float(df_tf[df_tf['manba'] == 'Market Savdo']['summa'].fillna(0).sum())
-    else:
-        yotoq_kirim, market_kirim = 0.0, 0.0
+        for _, tr in df_t.iterrows():
+            s_d = _s(tr.get('sana'))
+            if (not bosh_sana or not tugash_sana) or (b_s <= s_d <= t_s):
+                sum_v = _f(tr.get('summa'), 0.0)
+                if _s(tr.get('manba')) == 'Market Savdo':
+                    market_kirim += sum_v
+                else:
+                    yotoq_kirim += sum_v
 
+    xarajat_sum = 0.0
     if not df_x.empty:
-        df_xf = df_x[(df_x['sana'] >= b_s) & (df_x['sana'] <= t_s)] if (bosh_sana and tugash_sana) else df_x
-        xarajat_sum = float(df_xf['summa'].fillna(0).sum())
-    else:
-        xarajat_sum = 0.0
+        for _, xr in df_x.iterrows():
+            s_d = _s(xr.get('sana'))
+            if (not bosh_sana or not tugash_sana) or (b_s <= s_d <= t_s):
+                xarajat_sum += _f(xr.get('summa'), 0.0)
 
     tozalash_soni = sum(1 for h in toz_map.values() if h == "Tozalash kerak")
 
@@ -193,7 +247,7 @@ def api_dashboard(bosh_sana: Optional[str] = None, tugash_sana: Optional[str] = 
         "faol_mehmonlar": faol_list,
         "barcha_mehmonlar": barcha_list[:150],
         "xonalar": xonalar_xaritasi,
-        "tg_log": df_tg.to_dict(orient="records") if not df_tg.empty else []
+        "tg_log": df_tg_list
     }
 
 @app.post("/api/qabul")
@@ -259,7 +313,7 @@ def api_yangi_qabul(req: YangiBronReq):
         "Naqd" if req.tolov_tafsiloti == "Naqd" else "Karta", req.tolov_tafsiloti, holat,
         bugun_str, chiqish_str, "Hozir kirish", izoh_yak, req.telefon.strip()
     ))
-    xona_tozalik_ozgartir(req.xona, "Toza")
+    _tozalik_ozgartir_direct(req.xona, "Toza")
     if req.tolangan > 0:
         db.execute(
             "INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
@@ -281,7 +335,7 @@ def api_checkout(req: CheckoutReq):
     row = db.fetchone("SELECT mijoz, xona, tolagan_summa, faktik_narx, qoldiq, odam_soni FROM bronlar WHERE mijoz_id=?", (req.mijoz_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Mijoz topilmadi")
-    m_ism, m_xona, es_tol, es_fak, es_qol, m_odam = row[0], row[1], float(row[2] or 0), float(row[3] or 0), float(row[4] or 0), int(row[5] or 1)
+    m_ism, m_xona, es_tol, es_fak, es_qol, m_odam = row[0], row[1], _f(row[2]), _f(row[3]), _f(row[4]), int(_f(row[5], 1))
 
     if es_qol > 0 and req.vozvrat_summa == 0 and not req.majburiy_qarz_bilan:
         raise HTTPException(status_code=400, detail=f"QARZDOR:{int(es_qol)}")
@@ -292,7 +346,7 @@ def api_checkout(req: CheckoutReq):
         "UPDATE bronlar SET holat='Chiqib ketgan', chiqish_sanasi=?, tolagan_summa=?, faktik_narx=?, jami_summa=?, qoldiq=0 WHERE mijoz_id=?",
         (bugun_str, yangi_tol, yangi_fak, yangi_fak, req.mijoz_id)
     )
-    xona_tozalik_ozgartir(m_xona, "Tozalash kerak")
+    _tozalik_ozgartir_direct(m_xona, "Tozalash kerak")
     if req.vozvrat_summa > 0:
         db.execute(
             "INSERT INTO tolovlar_tarixi (sana, mijoz_id, mijoz_ismi, manba, summa, tolov_shakli, tolov_tafsiloti, xodim) VALUES (?,?,?,?,?,?,?,?)",
@@ -304,13 +358,10 @@ def api_checkout(req: CheckoutReq):
 
 @app.post("/api/tozalik")
 def api_tozalik(req: TozalikReq):
-    xona_tozalik_ozgartir(req.xona, req.holat)
+    _tozalik_ozgartir_direct(req.xona, req.holat)
     jurnalga_yozish("Housekeeping", req.xodim, "Xona tozaligi (Web UI)", f"{req.xona} -> {req.holat}")
     return {"ok": True}
 
-# =========================================================
-# ZAMONAVIY FULLSTACK FRONTEND (STARTUP-3 PILL NAVBAR & 2D GRID UI)
-# =========================================================
 FRONTEND_HTML = """
 <!DOCTYPE html>
 <html lang="uz" class="dark">
@@ -327,18 +378,16 @@ FRONTEND_HTML = """
 </head>
 <body class="min-h-screen flex flex-col">
 
-    <!-- TOP STARTUP-3 STYLE PILL NAVBAR -->
     <nav class="sticky top-0 z-50 bg-[#111420]/95 backdrop-blur border-b border-[#22273b] px-4 py-3">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-3">
                 <span class="text-2xl">🏨</span>
                 <div>
                     <h1 class="font-extrabold text-lg tracking-wide text-white">Y.S.H. ERP <span class="text-xs px-2 py-0.5 rounded-full bg-purple-600/30 text-purple-300 border border-purple-500/40">Fullstack v2.0</span></h1>
-                    <p id="server-time" class="text-xs text-slate-400">Yuklanmoqda...</p>
+                    <p id="server-time" class="text-xs text-emerald-400 font-semibold">Bog'lanmoqda...</p>
                 </div>
             </div>
 
-            <!-- PILL NAVIGATION BAR (4-SKRINSHOT USLUBIDA) -->
             <div class="flex flex-wrap items-center gap-1.5 bg-[#171c2e] p-1.5 rounded-full border border-[#2a324b]">
                 <button onclick="switchTab('dash')" id="tab-dash" class="px-4 py-1.5 rounded-full text-sm transition pill-active">🏠 Boshqaruv</button>
                 <button onclick="switchTab('rooms')" id="tab-rooms" class="px-4 py-1.5 rounded-full text-sm text-slate-300 hover:text-white transition">🗺️ 2D Krovatlar Xaritasi</button>
@@ -346,20 +395,18 @@ FRONTEND_HTML = """
                 <button onclick="switchTab('tg')" id="tab-tg" class="px-4 py-1.5 rounded-full text-sm text-slate-300 hover:text-white transition">📲 Telegram Nazorati</button>
             </div>
 
-            <!-- SANA FILTRI VA YANGI BRON TUGMASI -->
             <div class="flex items-center gap-2">
                 <input type="date" id="f-bosh" onchange="loadData()" class="bg-slate-900 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-white">
                 <span class="text-slate-500">➔</span>
                 <input type="date" id="f-tugash" onchange="loadData()" class="bg-slate-900 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-white">
-                <button onclick="openModal()" class="bg-gradient-to-r from-emerald-500 to-teal-500 hover: opacity-95 text-white font-bold text-sm px-4 py-2 rounded-full shadow-lg">+ Yangi Qabul</button>
+                <button onclick="openModal()" class="bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-95 text-white font-bold text-sm px-4 py-2 rounded-full shadow-lg">+ Yangi Qabul</button>
             </div>
         </div>
     </nav>
 
-    <!-- MAIN CONTENT -->
     <main class="max-w-7xl w-full mx-auto p-4 flex-1 space-y-6">
+        <div id="err-box" class="hidden p-4 rounded-xl bg-red-900/40 border border-red-500 text-red-200 text-sm"></div>
 
-        <!-- TAB 1: DASHBOARD -->
         <section id="sec-dash" class="space-y-6">
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="kpi-grid"></div>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-4" id="finance-grid"></div>
@@ -386,7 +433,6 @@ FRONTEND_HTML = """
             </div>
         </section>
 
-        <!-- TAB 2: 2D KROVATLAR XARITASI (1->2 | 3->4) -->
         <section id="sec-rooms" class="hidden space-y-4">
             <div class="flex flex-wrap justify-between items-center gap-2">
                 <h2 class="text-xl font-bold">🛏️ 36 ta Xona va 2D Krovatlar Jonli Matritsasi (1 ➔ 2 | 3 ➔ 4)</h2>
@@ -400,7 +446,6 @@ FRONTEND_HTML = """
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="rooms-2d-grid"></div>
         </section>
 
-        <!-- TAB 3: MEHMONLAR RO'YXATI -->
         <section id="sec-guests" class="hidden space-y-4">
             <div class="glass-card p-5">
                 <div class="flex justify-between items-center mb-4">
@@ -426,7 +471,6 @@ FRONTEND_HTML = """
             </div>
         </section>
 
-        <!-- TAB 4: TELEGRAM XABARLAR NAZORATI -->
         <section id="sec-tg" class="hidden space-y-4">
             <div class="glass-card p-5">
                 <h2 class="text-lg font-bold mb-1">📲 Telegramga Yuborilgan Xabarlar Jurnali (CEO & Owner)</h2>
@@ -434,10 +478,8 @@ FRONTEND_HTML = """
                 <div id="tg-log-list" class="space-y-3"></div>
             </div>
         </section>
-
     </main>
 
-    <!-- YANGI QABUL MODAL OYNASI -->
     <div id="qabul-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
         <div class="glass-card max-w-2xl w-full p-6 space-y-4 border border-purple-500/40">
             <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -485,7 +527,6 @@ FRONTEND_HTML = """
                 </div>
             </div>
 
-            <!-- 2D KROVAT TANLASH MATRITSASI -->
             <div>
                 <label class="text-xs text-purple-300 font-semibold">🧭 Yotoq o'rnini (Krovatni) ustiga bosib tanlang (1 ➔ 2 | 3 ➔ 4):</label>
                 <div id="m-beds-grid" class="grid grid-cols-2 gap-2 mt-2"></div>
@@ -502,17 +543,29 @@ FRONTEND_HTML = """
 let STATE = { xonalar: [], faol_mehmonlar: [], barcha_mehmonlar: [], tg_log: [], wingFilter: 'ALL', selectedBeds: [] };
 
 async function loadData() {
-    const b = document.getElementById('f-bosh').value;
-    const t = document.getElementById('f-tugash').value;
-    const q = (b && t) ? `?bosh_sana=${b}&tugash_sana=${t}` : '';
-    const res = await fetch('/api/dashboard' + q);
-    const data = await res.json();
-    STATE = { ...STATE, ...data };
-    document.getElementById('server-time').innerText = `🕒 Toshkent: ${data.vaqt} | PostgreSQL/SQLite Jonli Sinxron`;
-    renderDashboard();
-    renderRooms2D();
-    renderGuests();
-    renderTgLog();
+    try {
+        const b = document.getElementById('f-bosh').value;
+        const t = document.getElementById('f-tugash').value;
+        const q = (b && t) ? `?bosh_sana=${b}&tugash_sana=${t}` : '';
+        const res = await fetch('/api/dashboard' + q);
+        if (!res.ok) {
+            const errTxt = await res.text();
+            throw new Error("Server xatosi: " + errTxt);
+        }
+        const data = await res.json();
+        STATE = { ...STATE, ...data };
+        document.getElementById('err-box').classList.add('hidden');
+        document.getElementById('server-time').innerText = `🟢 Jonli aloqa | Toshkent: ${data.vaqt}`;
+        renderDashboard();
+        renderRooms2D();
+        renderGuests();
+        renderTgLog();
+    } catch (e) {
+        const eb = document.getElementById('err-box');
+        eb.innerText = "Xatolik yuz berdi: " + e.message;
+        eb.classList.remove('hidden');
+        document.getElementById('server-time').innerText = "⚠️ Aloqa xatosi";
+    }
 }
 
 function switchTab(tab) {
@@ -571,7 +624,7 @@ function renderDashboard() {
                 <button onclick="doCheckout('${m.mijoz_id}', '${m.mijoz}', ${m.qoldiq})" class="px-3 py-1 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-semibold">🚪 Checkout</button>
             </td>
         </tr>
-    `).join('') || '<tr><td colspan="8" class="text-center py-6 text-slate-500">Hozircha faol mehmonlar yo\'q</td></tr>';
+    `).join('') || '<tr><td colspan="8" class="text-center py-6 text-slate-500">Hozircha faol mehmonlar yo\'q (Yangi Qabul tugmasi orqali qo\'shib ko\'ring!)</td></tr>';
 }
 
 function filterWing(w) { STATE.wingFilter = w; renderRooms2D(); }
