@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import re
@@ -13,6 +14,7 @@ from database import (
     xona_tozalik_ozgartir, barcha_xona_tozalik_ol
 )
 from tg_bot import tg_xabar_yubor
+from auth import kirish_tekshir, token_yarat, token_tekshir, xodim_ol, parol_hash
 from ceo_panel import render_xarajatlar_va_smena, render_ceo_panel
 
 st.set_page_config(page_title="Y.S.H. ERP | Yangi Sergeli Hostel", layout="wide")
@@ -62,8 +64,8 @@ def init_reglament_db():
         "chegirma_talaba": "50",
         "chegirma_hafta": "10",
         "hisob_soati": "12:00",
-        "tg_token": "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE",
-        "ceo_chat_id": "6483211079",
+        "tg_token": os.environ.get("TG_BOT_TOKEN", ""),
+        "ceo_chat_id": os.environ.get("TG_CEO_CHAT_ID", ""),
         "owner_chat_id": "",
         "svodka_rejimi": "Har kuni 12:00 va 00:00 da",
         "oxirgi_svodka_12": "",
@@ -138,8 +140,8 @@ def _tg_direct_send(token, chat_id, html_text):
 
 def aqlli_tg_xabar(sarlavha, matn, xodim, turi="mijoz", muhim=False):
     soz = sozlamalarni_ol()
-    token = soz.get("tg_token", "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE")
-    ceo_id = soz.get("ceo_chat_id", "6483211079")
+    token = soz.get("tg_token", "")
+    ceo_id = soz.get("ceo_chat_id", "")
     owner_id = soz.get("owner_chat_id", "").strip()
 
     tg_xabar_yubor(sarlavha, matn, xodim, muhim=muhim)
@@ -242,9 +244,9 @@ def kunlik_svodka_shakllantir_va_yubor(xodim_ismi="Avto-Tizim (Y.S.H.)", majburi
         f"📦 <b>Skladda kam qolgan tovarlar:</b> {kam_tovarlar_soni} xil"
     )
 
-    token = soz.get("tg_token", "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE")
+    token = soz.get("tg_token", "")
     owner_id = soz.get("owner_chat_id", "").strip()
-    ceo_id = soz.get("ceo_chat_id", "6483211079").strip()
+    ceo_id = soz.get("ceo_chat_id", "").strip()
 
     tg_xabar_yubor(svodka_turi_nomi, ceo_matn, xodim_ismi)
     if owner_id and owner_id != ceo_id:
@@ -783,9 +785,10 @@ def bron_shu_kunda_faolmi(r_kirish, r_chiqish, r_holat, tekshir_sana_str):
 # ==========================================
 # AVTO-LOGIN (REFRESHDA CHIQIB KETMASLIK UCHUN)
 # ==========================================
-if not st.session_state.logged_in and "user" in st.query_params:
-    saved_login = st.query_params["user"]
-    user = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=?", (saved_login,))
+if not st.session_state.logged_in and "s" in st.query_params:
+    # Faqat imzolangan va muddati o'tmagan sessiya tokeni qabul qilinadi (oddiy ?user=... endi ishlamaydi)
+    saved_login = token_tekshir(db, st.query_params["s"])
+    user = xodim_ol(db, saved_login) if saved_login else None
     if user:
         st.session_state.logged_in = True
         st.session_state.role = user[0]
@@ -805,13 +808,13 @@ if not st.session_state.logged_in:
             parol_input = st.text_input("Maxfiy parol", type="password")
             submit_login = st.form_submit_button("Tizimga kirish", use_container_width=True, type="primary")
             if submit_login:
-                user = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=? AND parol=?", (login_input.strip(), parol_input.strip()))
+                user = kirish_tekshir(db, login_input, parol_input)
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.role = user[0]
                     st.session_state.xodim_ismi = user[1] if user[1] else user[2].upper()
                     st.session_state.user_login = user[2]
-                    st.query_params["user"] = user[2]
+                    st.query_params["s"] = token_yarat(db, user[2])
                     if user[0] == "housekeeping":
                         st.session_state.faol_sahifa = "🧹 Xona tozalash"
                     st.query_params["page"] = st.session_state.faol_sahifa
@@ -3035,7 +3038,7 @@ elif sahifa == "👑 CEO va Hisobotlar":
                     if db.fetchone("SELECT login FROM xodimlar WHERE login=?", (hk_login.strip(),)):
                         st.error("Bunday login band!")
                     else:
-                        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (hk_login.strip(), "housekeeping", hk_parol.strip(), hk_ism.strip()))
+                        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (hk_login.strip(), "housekeeping", parol_hash(hk_parol.strip()), hk_ism.strip()))
                         jurnalga_yozish("Xodimlar", xodim_ismi, "Tozalik xodimasi qo'shildi", f"{hk_ism} ({hk_login})")
                         keshni_tozala()
                         st.success(f"✅ {hk_ism} (`{hk_login}`) tizimga qo'shildi!")
@@ -3066,7 +3069,7 @@ elif sahifa == "⚙️ Sozlamalar":
                         st.error("⚠️ Kiritilgan yangi parollar bir-biriga mos tushmadi!")
                     else:
                         if yangi_parol:
-                            db.execute("UPDATE xodimlar SET ism=?, parol=? WHERE login=?", (yangi_ism.strip(), yangi_parol.strip(), st.session_state.user_login))
+                            db.execute("UPDATE xodimlar SET ism=?, parol=? WHERE login=?", (yangi_ism.strip(), parol_hash(yangi_parol.strip()), st.session_state.user_login))
                         else:
                             db.execute("UPDATE xodimlar SET ism=? WHERE login=?", (yangi_ism.strip(), st.session_state.user_login))
                         jurnalga_yozish("Tizim Sozlamalari", xodim_ismi, "Profil yangilandi", "Foydalanuvchi paroli/ismi o'zgartirildi")
@@ -3137,7 +3140,7 @@ elif sahifa == "⚙️ Sozlamalar":
                 with st.form("tg_routing_form", enter_to_submit=False):
                     tg1, tg2, tg3 = st.columns(3, gap="medium")
                     with tg1:
-                        y_ceo_id = st.text_input("👑 CEO Telegram Chat ID:", value=joriy_soz.get("ceo_chat_id", "6483211079"))
+                        y_ceo_id = st.text_input("👑 CEO Telegram Chat ID:", value=joriy_soz.get("ceo_chat_id", ""))
                     with tg2:
                         y_owner_id = st.text_input("🏛️ Mehmonxona Egasi (Owner) Chat ID:", value=joriy_soz.get("owner_chat_id", ""), placeholder="Masalan: 123456789")
                     with tg3:

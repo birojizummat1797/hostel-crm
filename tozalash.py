@@ -1,5 +1,8 @@
 import sqlite3
 
+if input("DIQQAT: barcha mijozlar va audit tarixi o'chiriladi! Davom etish uchun 'HA' deb yozing: ").strip() != "HA":
+    raise SystemExit("Bekor qilindi.")
+
 conn = sqlite3.connect('hostel_crm.db')
 c = conn.cursor()
 

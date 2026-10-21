@@ -4,7 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import io
 import os
+import secrets
 from tg_bot import tg_xabar_yubor
+from auth import parol_hash
 
 try:
     import psycopg2
@@ -314,9 +316,11 @@ def init_db():
             pass
 
     if db.fetchone("SELECT COUNT(*) FROM xodimlar")[0] == 0:
-        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('admin', 'admin', '123', 'Asosiy Admin')")
-        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('ceo', 'ceo', '777', 'Boshqaruvchi (CEO)')")
-        db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES ('tozalik', 'housekeeping', '111', 'Tozalik Xodimasi')")
+        # Yangi baza: oldindan ma'lum bo'lgan parollar (123/777/111) o'rniga tasodifiy bir martalik parollar
+        for lg, rl, im in [('admin', 'admin', 'Asosiy Admin'), ('ceo', 'ceo', 'Boshqaruvchi (CEO)'), ('tozalik', 'housekeeping', 'Tozalik Xodimasi')]:
+            bir_martalik = secrets.token_urlsafe(8)
+            db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (lg, rl, parol_hash(bir_martalik), im))
+            print(f"[Y.S.H. ERP] Boshlang'ich kirish -> login: {lg} | parol: {bir_martalik}  (kirgach darhol almashtiring)")
     return True
 
 init_db()

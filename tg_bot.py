@@ -1,9 +1,11 @@
+import os
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
-TG_BOT_TOKEN = "8542159383:AAH6-3BV3274-N84m6V6Q1_3C1bE78xX0fE"
-TG_CEO_CHAT_ID = "6483211079"
+# Token kodda saqlanmaydi: CEO panelidagi sozlamalardan yoki muhit o'zgaruvchisidan olinadi
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
+TG_CEO_CHAT_ID = os.environ.get("TG_CEO_CHAT_ID", "")
 
 def tg_log_saqla(vaqt, sarlavha, matn, qabul_qiluvchi, xodim, holat):
     try:
@@ -52,6 +54,9 @@ def tg_xabar_yubor(sarlavha, matn, xodim="Tizim", muhim=False, qabul_nomi="👑 
 
     holat_str = "❌ Xatolik"
     yuborildi = False
+    if not str(token).strip() or not str(chat_id).strip():
+        tg_log_saqla(uz_vaqt, sarlavha, matn, qabul_nomi, xodim, "⚠️ Token yoki Chat ID kiritilmagan")
+        return False
     try:
         url = f"https://api.telegram.org/bot{token.strip()}/sendMessage"
         data = urllib.parse.urlencode({"chat_id": str(chat_id).strip(), "text": xabar, "parse_mode": "HTML"}).encode("utf-8")

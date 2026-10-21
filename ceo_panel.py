@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from database import db, jurnalga_yozish, haftalik_hisobot_yuklash, avto_kenglik_sozla, toshkent_vaqti, xona_tozalik_ozgartir, XONALAR
 from tg_bot import tg_xabar_yubor
+from auth import parol_hash
 
 def render_xarajatlar_va_smena(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=None, g_davr_nomi="Barcha vaqt"):
     st.header("💸 Xarajatlar va Smena Topshirish")
@@ -435,9 +436,9 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
         st.subheader("👥 Barcha xodimlar va Rollar")
         c_u1, c_u2 = st.columns([1.2, 1], gap="medium")
         with c_u1:
-            df_users = db.read_df("SELECT login, ism, role, parol FROM xodimlar")
+            df_users = db.read_df("SELECT login, ism, role FROM xodimlar")
             df_users["Holat"] = "🟢 Faol"
-            df_users.columns = ["Login", "Ism-Sharif (Foydalanuvchi)", "Rol", "Parol", "Holat"]
+            df_users.columns = ["Login", "Ism-Sharif (Foydalanuvchi)", "Rol", "Holat"]
             st.dataframe(df_users, use_container_width=True, hide_index=True, column_config=avto_kenglik_sozla(df_users))
 
             och_royxat = [l for l in df_users["Login"].tolist() if l != 'ceo']
@@ -473,7 +474,7 @@ def render_ceo_panel(xodim_ismi, bugungi_sana, g_bosh_sana=None, g_tugash_sana=N
                         else:
                             db.execute(
                                 "INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)",
-                                (u_login.strip(), u_role, u_parol.strip(), u_ism.strip())
+                                (u_login.strip(), u_role, parol_hash(u_parol.strip()), u_ism.strip())
                             )
                             jurnalga_yozish("Xodimlar", xodim_ismi, "Yangi xodim qo'shildi", f"{u_ism} ({u_login}) - {u_role}")
                             st.success(f"✅ {u_ism} tizimga qo'shildi!")

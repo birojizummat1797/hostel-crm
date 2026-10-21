@@ -4,27 +4,72 @@ import json
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional, List
 import io
 
 from database import (
     db, XONALAR, XONA_TOMON_MAP, toshkent_vaqti, xona_sigimini_ol,
     xonadagi_band_joyni_hisobla, xona_jinsini_tekshir, id_yaratish,
-    jurnalga_yozish, haftalik_hisobot_yuklash
+    jurnalga_yozish, haftalik_hisobot_yuklash, narx_hisobla
 )
 from tg_bot import tg_xabar_yubor
+from auth import token_yarat, token_tekshir, kirish_tekshir, xodim_ol, parol_hash
 
-app = FastAPI(title="Y.S.H. ERP | Fullstack SaaS v4.0")
+# ==================== AVTORIZATSIYA ====================
+OCHIQ_YOLLAR = {("GET", "/"), ("POST", "/api/login")}
+# Faqat CEO bajara oladigan amallar (server tomonda tekshiriladi, brauzerga ishonilmaydi)
+FAQAT_CEO = [
+    ("DELETE", "/api/mijoz/"), ("DELETE", "/api/xodim/"), ("POST", "/api/xodim-qoshish"),
+    ("GET", "/api/sozlamalar"), ("POST", "/api/sozlamalar"), ("POST", "/api/svodka-yubor"),
+]
+# Tozalik xodimi faqat xona xaritasi va tozalik holatini ishlata oladi
+TOZALIK_RUXSAT = {("GET", "/api/dashboard"), ("GET", "/api/me"), ("POST", "/api/tozalik")}
+
+def himoya(request: Request):
+    yol, metod = request.url.path, request.method
+    if (metod, yol) in OCHIQ_YOLLAR:
+        return None
+    sarlavha = request.headers.get("authorization", "")
+    token = sarlavha[7:] if sarlavha.lower().startswith("bearer ") else request.query_params.get("token", "")
+    login = token_tekshir(db, token) if token else None
+    u = xodim_ol(db, login) if login else None
+    if not u:
+        raise HTTPException(status_code=401, detail="Avval tizimga kiring!")
+    rol = str(u[0])
+    if rol != "ceo" and any(metod == m and yol.startswith(p) for m, p in FAQAT_CEO):
+        raise HTTPException(status_code=403, detail="Bu amal faqat CEO uchun!")
+    if rol == "housekeeping" and (metod, yol) not in TOZALIK_RUXSAT:
+        raise HTTPException(status_code=403, detail="Sizda bu amalga ruxsat yo'q!")
+    request.state.user = u
+    return u
+
+app = FastAPI(title="Y.S.H. ERP | Fullstack SaaS v4.0", dependencies=[Depends(himoya)],
+              docs_url=None, redoc_url=None, openapi_url=None)
 
 # ==================== REQUEST MODELLARI ====================
+
+_XAVFLI = {ord("<"): "&lt;", ord(">"): "&gt;", ord('"'): "&quot;", ord("'"): "&#39;"}
+
+class Tozalangan(BaseModel):
+    """Matn maydonlaridagi < > " ' belgilarini xavfsiz ko'rinishga o'tkazadi (saqlangan XSS'dan himoya)."""
+    @model_validator(mode="after")
+    def _matnni_tozala(self):
+        for nom in type(self).model_fields:
+            v = getattr(self, nom)
+            if isinstance(v, str):
+                object.__setattr__(self, nom, v.translate(_XAVFLI))
+            elif isinstance(v, list):
+                object.__setattr__(self, nom, [x.translate(_XAVFLI) if isinstance(x, str) else x for x in v])
+        return self
+
 class LoginReq(BaseModel):
     login: str
     parol: str
 
-class YangiBronReq(BaseModel):
+class YangiBronReq(Tozalangan):
     mijoz: str
     telefon: Optional[str] = ""
     jinsi: str = "Erkak"
@@ -43,7 +88,7 @@ class YangiBronReq(BaseModel):
     izoh: Optional[str] = ""
     xodim: str = "CEO (Web UI)"
 
-class TahrirBronReq(BaseModel):
+class TahrirBronReq(Tozalangan):
     mijoz_id: str
     mijoz: str
     toifa: str
@@ -60,7 +105,7 @@ class TahrirBronReq(BaseModel):
     avto_qayta_hisob: bool = False
     xodim: str = "CEO (Web UI)"
 
-class CheckoutReq(BaseModel):
+class CheckoutReq(Tozalangan):
     mijoz_id: str
     yashagan_kun: Optional[int] = None
     vozvrat_summa: float = 0
@@ -68,13 +113,13 @@ class CheckoutReq(BaseModel):
     xodim: str = "CEO (Web UI)"
     majburiy_qarz_bilan: bool = False
 
-class QarzYopishReq(BaseModel):
+class QarzYopishReq(Tozalangan):
     mijoz_id: str
     summa: float
     kassa: str = "Naqd"
     xodim: str = "CEO (Web UI)"
 
-class MuddatChozishReq(BaseModel):
+class MuddatChozishReq(Tozalangan):
     mijoz_id: str
     qoshimcha_kun: int
     qoshimcha_summa: float
@@ -82,14 +127,14 @@ class MuddatChozishReq(BaseModel):
     kassa: str = "Naqd"
     xodim: str = "CEO (Web UI)"
 
-class XonaKochirishReq(BaseModel):
+class XonaKochirishReq(Tozalangan):
     mijoz_id: str
     yangi_xona: str
     yangi_krovatlar: List[str] = []
     vikup: bool = False
     xodim: str = "CEO (Web UI)"
 
-class MarketSavdoReq(BaseModel):
+class MarketSavdoReq(Tozalangan):
     mahsulot_id: int
     miqdor: int = 1
     tolov_turi: str = "Darhol"
@@ -97,7 +142,7 @@ class MarketSavdoReq(BaseModel):
     mijoz_id: Optional[str] = ""
     xodim: str = "CEO (Web UI)"
 
-class YangiTovarReq(BaseModel):
+class YangiTovarReq(Tozalangan):
     nomi: str
     hajmi: Optional[str] = ""
     kategoriya: str = "Ichimliklar"
@@ -106,18 +151,18 @@ class YangiTovarReq(BaseModel):
     qoldiq: int = 1
     xodim: str = "CEO (Web UI)"
 
-class XarajatReq(BaseModel):
+class XarajatReq(Tozalangan):
     kategoriya: str
     summa: float
     tolov_turi: str = "Naqd"
     izoh: str
     xodim: str = "CEO (Web UI)"
 
-class SmenaYopishReq(BaseModel):
+class SmenaYopishReq(Tozalangan):
     izoh: Optional[str] = ""
     xodim: str = "CEO (Web UI)"
 
-class TozalikReq(BaseModel):
+class TozalikReq(Tozalangan):
     xona: str
     holat: str
     xodim: str = "Web UI"
@@ -177,9 +222,14 @@ def _bron_shu_kunda_faolmi(k_s, ch_s, holat, tekshir_sana):
 # ==================== API ENDPOINTLAR ====================
 @app.post("/api/login")
 def api_login(req: LoginReq):
-    u = db.fetchone("SELECT role, ism, login FROM xodimlar WHERE login=? AND parol=?", (req.login.strip(), req.parol.strip()))
+    u = kirish_tekshir(db, req.login, req.parol)
     if not u:
         raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri!")
+    return {"role": _s(u[0], "admin"), "ism": _s(u[1]) or _s(u[2]).upper(), "login": _s(u[2]), "token": token_yarat(db, u[2])}
+
+@app.get("/api/me")
+def api_me(request: Request):
+    u = request.state.user
     return {"role": _s(u[0], "admin"), "ism": _s(u[1]) or _s(u[2]).upper(), "login": _s(u[2])}
 
 @app.get("/api/excel-export")
@@ -479,22 +529,10 @@ def api_yangi_qabul(req: YangiBronReq):
     if zid:
         raise HTTPException(status_code=400, detail=f"{req.xona} da {zid} mehmon bor! {req.jinsi} qo'shib bo'lmaydi.")
 
-    hisob_odam = sigim if req.vikup else req.odam_soni
-    if tomon == "O'rtadagi":
-        kunlik = 300000 if req.toifa == "Chet el fuqarosi" else 250000
-    else:
-        if req.toifa == "Chet el fuqarosi":
-            kunlik = (baz_narx + 50000) * hisob_odam
-        elif req.toifa == "Talaba (Student)":
-            kunlik = (baz_narx * 0.5) * hisob_odam
-        else:
-            kunlik = baz_narx * hisob_odam
-
-    jami = kunlik * req.kunlar
-    if req.kunlar >= 7:
-        jami = jami * 0.9
-    if req.chegirma_foiz > 0:
-        jami = round(jami * ((100.0 - float(req.chegirma_foiz)) / 100.0))
+    # Narx bitta joyda (database.narx_hisobla) hisoblanadi: Streamlit va Web bir xil narx chiqaradi
+    kunlik, jami = narx_hisobla(tomon, req.xona, req.toifa, req.odam_soni, req.kunlar, toliq_xona=req.vikup,
+                                maxsus_chegirma_foiz=req.chegirma_foiz if req.chegirma_foiz > 0 else None)
+    jami = round(jami)
 
     qoldiq = jami - req.tolangan
     holat = "To'langan" if qoldiq <= 0 else "Qarzdorlik"
@@ -572,14 +610,8 @@ def api_tahrir(req: TahrirBronReq):
         chiq_str = bugun_str
 
     if req.avto_qayta_hisob:
-        hisob_odam = y_sigim if req.vikup else req.odam_soni
-        if y_tomon == "O'rtadagi":
-            kunlik = 300000 if req.toifa == "Chet el fuqarosi" else 250000
-        else:
-            kunlik = ((baz_narx + 50000) if req.toifa == "Chet el fuqarosi" else (baz_narx * 0.5 if req.toifa == "Talaba (Student)" else baz_narx)) * hisob_odam
-        y_faktik = kunlik * req.kunlar
-        if req.kunlar >= 7:
-            y_faktik = y_faktik * 0.9
+        kunlik, y_faktik = narx_hisobla(y_tomon, req.xona, req.toifa, req.odam_soni, req.kunlar, toliq_xona=req.vikup)
+        y_faktik = round(y_faktik)
     else:
         y_faktik = req.faktik_narx
         kunlik = round(y_faktik / max(1, req.kunlar))
@@ -769,10 +801,14 @@ def api_tozalik(req: TozalikReq):
 
 @app.post("/api/xodim-qoshish")
 def api_xodim_qoshish(req: XodimReq):
-    mavjud = db.fetchone("SELECT login FROM xodimlar WHERE login=?", (req.login.strip(),))
+    mavjud = db.fetchone("SELECT login FROM xodimlar WHERE login=?", (req.login.strip().translate(_XAVFLI),))
     if mavjud:
         raise HTTPException(status_code=400, detail="Bunday login band!")
-    db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (req.login.strip(), req.role, req.parol.strip(), req.ism.strip()))
+    if req.role not in ("admin", "housekeeping", "ceo"):
+        raise HTTPException(status_code=400, detail="Noto'g'ri rol!")
+    if not req.login.strip() or not req.parol.strip():
+        raise HTTPException(status_code=400, detail="Login va parol bo'sh bo'lmasligi kerak!")
+    db.execute("INSERT INTO xodimlar (login, role, parol, ism) VALUES (?,?,?,?)", (req.login.strip().translate(_XAVFLI), req.role, parol_hash(req.parol.strip()), req.ism.strip().translate(_XAVFLI)))
     jurnalga_yozish("Xodimlar", req.xodim, "Yangi xodim (Web UI)", f"{req.ism} ({req.login}) - {req.role}")
     return {"ok": True}
 class SozlamaReq(BaseModel):
@@ -835,7 +871,7 @@ def api_get_sozlamalar():
     rows = db.fetchall("SELECT kalit, qiymat FROM tizim_sozlamalari")
     mp = {str(r[0]): str(r[1]) for r in rows} if rows else {}
     return {
-        "tg_token": mp.get("tg_token", ""),
+        "tg_token": ("•••• " + mp["tg_token"][-6:]) if mp.get("tg_token") else "",
         "ceo_chat_id": mp.get("ceo_chat_id", ""),
         "owner_chat_id": mp.get("owner_chat_id", ""),
         "reglament": mp.get("ichki_reglament", "1. Sutka hisobi soat 12:00 gacha.\n2. Xonada chekish va spirtli ichimlik taqiqlanadi.")
@@ -844,6 +880,8 @@ def api_get_sozlamalar():
 @app.post("/api/sozlamalar")
 def api_save_sozlamalar(req: SozlamaReq):
     for k, v in [("tg_token", req.tg_token), ("ceo_chat_id", req.ceo_chat_id), ("owner_chat_id", req.owner_chat_id), ("ichki_reglament", req.reglament)]:
+        if k == "tg_token" and v.startswith("••••"):
+            continue  # niqoblangan qiymat qaytib kelgan: eski token o'zgarmaydi
         mav = db.fetchone("SELECT kalit FROM tizim_sozlamalari WHERE kalit=?", (k,))
         if mav:
             db.execute("UPDATE tizim_sozlamalari SET qiymat=? WHERE kalit=?", (v.strip(), k))
@@ -913,7 +951,7 @@ FRONTEND_HTML = r"""
                 <div>
                     <div class="flex items-center gap-2">
                         <h1 class="font-extrabold text-lg tracking-wide text-white">Y.S.H. ERP</h1>
-                        <span id="user-badge" onclick="openLoginModal()" class="cursor-pointer text-xs px-2.5 py-0.5 rounded-full bg-purple-600/30 text-purple-200 border border-purple-500/40 hover:bg-purple-600/50">👑 CEO Rejimi (Almashtirish)</span>
+                        <span id="user-badge" onclick="openLoginModal()" class="cursor-pointer text-xs px-2.5 py-0.5 rounded-full bg-purple-600/30 text-purple-200 border border-purple-500/40 hover:bg-purple-600/50">🔐 Kirish</span>
                     </div>
                     <p id="server-time" class="text-xs text-emerald-400 font-semibold">🟢 Jonli aloqa faol</p>
                 </div>
@@ -1319,9 +1357,11 @@ FRONTEND_HTML = r"""
         <div class="glass-card max-w-sm w-full p-6 space-y-4 border border-purple-500/40">
             <h3 class="text-lg font-bold text-white">🔐 Xodim Avtorizatsiyasi</h3>
             <input id="l-user" type="text" placeholder="Login (masalan: ceo yoki admin)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-            <input id="l-pass" type="password" placeholder="Parol" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <input id="l-pass" type="password" placeholder="Parol" onkeydown="if(event.key==='Enter') doLogin()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <div id="login-err" class="text-xs text-rose-400"></div>
             <div class="flex justify-end gap-2">
-                <button onclick="document.getElementById('login-modal').classList.add('hidden')" class="px-4 py-2 rounded-lg bg-slate-800 text-xs">Yopish</button>
+                <button onclick="logout()" class="px-4 py-2 rounded-lg bg-rose-900/60 text-xs">Chiqish</button>
+                <button id="login-close" onclick="document.getElementById('login-modal').classList.add('hidden')" class="px-4 py-2 rounded-lg bg-slate-800 text-xs">Yopish</button>
                 <button onclick="doLogin()" class="px-5 py-2 rounded-lg bg-purple-600 font-bold text-xs">Kirish</button>
             </div>
         </div>
@@ -1333,7 +1373,26 @@ STATE.wingFilter = 'ALL';
 STATE.selectedBeds = [];
 STATE.moveSelectedBeds = [];
 STATE.editSelectedBeds = [];
-STATE.currentUser = { role: 'ceo', ism: 'Botir Hakimov (CEO)', login: 'ceo' };
+STATE.currentUser = { role: '', ism: '', login: '' };
+
+// ===== Avtorizatsiya: barcha so'rovlarga token qo'shiladi, 401 bo'lsa kirish oynasi ochiladi =====
+let AUTH_TOKEN = '';
+try { AUTH_TOKEN = localStorage.getItem('ysh_token') || ''; } catch (e) {}
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(url, opts = {}) {
+    if (AUTH_TOKEN) opts.headers = { ...(opts.headers || {}), 'Authorization': 'Bearer ' + AUTH_TOKEN };
+    const res = await _origFetch(url, opts);
+    if (res.status === 401 && url !== '/api/login') { logout(true); }
+    return res;
+};
+function logout(sessiyaTugadi) {
+    AUTH_TOKEN = '';
+    try { localStorage.removeItem('ysh_token'); } catch (e) {}
+    STATE.currentUser = { role: '', ism: '', login: '' };
+    document.getElementById('user-badge').innerText = '🔐 Kirish';
+    openLoginModal();
+    if (sessiyaTugadi === true) document.getElementById('login-err').innerText = 'Sessiya tugadi, qaytadan kiring.';
+}
 
 function applyState(data) {
     STATE = { ...STATE, ...data };
@@ -1363,32 +1422,59 @@ async function loadData() {
     }
 }
 
-function downloadExcel() {
+async function downloadExcel() {
     const b = document.getElementById('f-bosh').value;
     const t = document.getElementById('f-tugash').value;
     const q = (b && t) ? `?bosh_sana=${b}&tugash_sana=${t}` : '';
-    window.location.href = '/api/excel-export' + q;
+    const res = await fetch('/api/excel-export' + q);
+    if (!res.ok) { alert("Excel yuklab bo'lmadi: " + res.status); return; }
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = 'YSH_ERP_Hisobot.xlsx'; a.click();
+    URL.revokeObjectURL(url);
 }
 
 function switchTab(tab) {
     ['dash', 'timeline', 'rooms', 'guests', 'market', 'finance', 'ceo'].forEach(t => {
         document.getElementById('sec-' + t).classList.toggle('hidden', t !== tab);
         const btn = document.getElementById('tab-' + t);
+        const yashirin = btn.classList.contains('hidden');  // rol bo'yicha yashirilgan tab qayta ochilib qolmasin
         if (t === tab) btn.className = "px-3 py-1.5 rounded-full text-xs sm:text-sm transition pill-active";
         else btn.className = "px-3 py-1.5 rounded-full text-xs sm:text-sm text-slate-300 hover:text-white transition";
+        if (yashirin) btn.classList.add('hidden');
     });
 }
 
-function openLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
+function openLoginModal() {
+    document.getElementById('login-modal').classList.remove('hidden');
+    document.getElementById('login-close').classList.toggle('hidden', !AUTH_TOKEN);
+}
 async function doLogin() {
     const login = document.getElementById('l-user').value;
     const parol = document.getElementById('l-pass').value;
     const res = await fetch('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({login, parol}) });
     if (res.ok) {
-        STATE.currentUser = await res.json();
-        document.getElementById('user-badge').innerText = `👤 ${STATE.currentUser.ism} (${STATE.currentUser.role.toUpperCase()})`;
-        document.getElementById('login-modal').classList.add('hidden');
-    } else alert("Login yoki parol xato!");
+        const u = await res.json();
+        AUTH_TOKEN = u.token; delete u.token;
+        try { localStorage.setItem('ysh_token', AUTH_TOKEN); } catch (e) {}
+        document.getElementById('l-pass').value = '';
+        document.getElementById('login-err').innerText = '';
+        enterApp(u);
+    } else document.getElementById('login-err').innerText = "Login yoki parol xato!";
+}
+
+function enterApp(u) {
+    STATE.currentUser = u;
+    document.getElementById('user-badge').innerText = `👤 ${u.ism} (${u.role.toUpperCase()})`;
+    document.getElementById('login-modal').classList.add('hidden');
+    applyRolePermissions();
+    loadData();
+}
+
+async function startApp() {
+    if (!AUTH_TOKEN) { openLoginModal(); return; }
+    const res = await fetch('/api/me');
+    if (res.ok) enterApp(await res.json());
 }
 
 function applyRolePermissions() {
@@ -2185,9 +2271,9 @@ async function submitQabul() {
     else { const err = await res.json(); alert("Xatolik: " + err.detail); }
 }
 
-applyState(STATE);
-// Har 15 soniyada orqa fonda avtomatik sinxronizatsiya
-setInterval(loadData, 15000);
+startApp();
+// Har 15 soniyada orqa fonda avtomatik sinxronizatsiya (faqat kirgan bo'lsa)
+setInterval(() => { if (AUTH_TOKEN) loadData(); }, 15000);
 </script>
 </body>
 </html>
@@ -2195,6 +2281,6 @@ setInterval(loadData, 15000);
 
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
-    init_data = api_dashboard()
-    html_out = FRONTEND_HTML.replace("__INITIAL_STATE_JSON__", json.dumps(init_data, ensure_ascii=False))
+    # Sahifa bilan birga hech qanday mijoz ma'lumoti yuborilmaydi: ma'lumot faqat login'dan keyin /api/dashboard orqali olinadi
+    html_out = FRONTEND_HTML.replace("__INITIAL_STATE_JSON__", "{}")
     return html_out
